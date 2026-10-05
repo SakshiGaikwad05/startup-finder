@@ -12,6 +12,7 @@ export interface FilterState {
   roles: string[]; // job-role categories; empty = all roles
   hiringOnly: boolean;
   matchingOnly: boolean;
+  emailOnly?: boolean;
   search: string;
   sort: "match" | "discovered" | "funding" | "founded" | "relevant_jobs";
 }
@@ -63,6 +64,7 @@ export function applyFilters(list: StartupView[], f: FilterState): StartupView[]
     if (f.age.length && !f.age.includes(s.age_bucket)) return false;
     if (f.hiringOnly && s.jobs.length === 0) return false;
     if (f.matchingOnly && s.relevant_jobs === 0) return false;
+    if (f.emailOnly && s.emails.length === 0) return false;
     if (f.search) {
       const q = f.search.toLowerCase();
       const hay = `${s.name} ${s.description ?? ""} ${s.industry ?? ""} ${s.jobs.map((j) => j.job_title).join(" ")}`.toLowerCase();
@@ -80,90 +82,132 @@ export function applyFilters(list: StartupView[], f: FilterState): StartupView[]
   return out.sort(by[f.sort]);
 }
 
-function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+/** Toggle pill — easier to scan than a column of checkboxes. */
+function Pill({ label, on, onClick, title }: { label: string; on: boolean; onClick: () => void; title?: string }) {
   return (
-    <label className="flex cursor-pointer items-center gap-1.5 text-sm text-gray-700">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="accent-indigo-600" />
+    <button
+      onClick={onClick}
+      title={title}
+      aria-pressed={on}
+      className={`rounded-full border px-2.5 py-1 text-xs transition ${
+        on ? "border-indigo-600 bg-indigo-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-gray-400"
+      }`}
+    >
       {label}
+    </button>
+  );
+}
+
+function Switch({ label, on, onChange, hint }: { label: string; on: boolean; onChange: (v: boolean) => void; hint?: string }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-700">
+      <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 accent-indigo-600" />
+      <span>
+        {label}
+        {hint && <span className="block text-[11px] text-gray-400">{hint}</span>}
+      </span>
     </label>
   );
 }
 
-function toggle(list: string[], v: string, on: boolean) {
-  return on ? [...new Set([...list, v])] : list.filter((x) => x !== v);
+function Group({ title, children, hint, defaultOpen = true, active = 0 }: { title: string; children: React.ReactNode; hint?: string; defaultOpen?: boolean; active?: number }) {
+  return (
+    <details open={defaultOpen} className="group border-t border-gray-100 pt-3 first:border-t-0 first:pt-0">
+      <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <span>
+          {title}
+          {active > 0 && <span className="ml-1.5 rounded-full bg-indigo-100 px-1.5 text-[10px] text-indigo-700">{active}</span>}
+        </span>
+        <span className="text-gray-300 transition group-open:rotate-180">▾</span>
+      </summary>
+      {hint && <p className="mt-1 text-[11px] text-gray-400">{hint}</p>}
+      <div className="mt-2">{children}</div>
+    </details>
+  );
+}
+
+function toggle(list: string[], v: string) {
+  return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
 }
 
 export function Filters({ f, set }: { f: FilterState; set: (f: FilterState) => void }) {
-  const group = "space-y-1.5";
-  const title = "mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400";
+  const roles = f.roles ?? [];
+  const aiActive = [f.ai.ai, f.ai.nonAi, f.ai.unknown].filter((x) => !x).length;
   return (
-    <aside className="space-y-5 rounded-lg border border-gray-200 bg-white p-4 text-sm">
-      <div>
-        <div className={title}>Show</div>
-        <div className="flex rounded-md border border-gray-200 p-0.5 text-xs">
-          {(["today", "all"] as const).map((v) => (
-            <button key={v} onClick={() => set({ ...f, view: v })} className={`flex-1 rounded px-2 py-1 ${f.view === v ? "bg-gray-900 text-white" : "text-gray-600"}`}>
-              {v === "today" ? "New & updated (latest run)" : "All startups"}
-            </button>
-          ))}
-        </div>
-      </div>
+    <aside className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 text-sm lg:sticky lg:top-4">
       <input
         value={f.search}
         onChange={(e) => set({ ...f, search: e.target.value })}
-        placeholder="Search name, job, industry…"
-        className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+        placeholder="🔍 Search startup or job title"
+        className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
       />
-      <div className={group}>
-        <div className={title}>Job roles</div>
-        {ROLE_CATEGORIES.map((r) => (
-          <Check key={r} label={r} checked={(f.roles ?? []).includes(r)} onChange={(v) => set({ ...f, roles: toggle(f.roles ?? [], r, v) })} />
-        ))}
-        <div className="text-xs text-gray-400">{(f.roles ?? []).length ? "Cards show only these roles" : "None ticked = all roles"}</div>
-      </div>
-      <div className={group}>
-        <div className={title}>Location</div>
-        {LOCATION_OPTIONS.map((l) => (
-          <Check key={l} label={l} checked={f.locations.includes(l)} onChange={(v) => set({ ...f, locations: toggle(f.locations, l, v) })} />
-        ))}
-        <button className="text-xs text-gray-400 hover:text-gray-700" onClick={() => set({ ...f, locations: [] })}>
-          Any location
-        </button>
-      </div>
-      <div className={group}>
-        <div className={title}>Startup type</div>
-        <Check label="AI" checked={f.ai.ai} onChange={(v) => set({ ...f, ai: { ...f.ai, ai: v } })} />
-        <Check label="Non-AI" checked={f.ai.nonAi} onChange={(v) => set({ ...f, ai: { ...f.ai, nonAi: v } })} />
-        <Check label="Unknown" checked={f.ai.unknown} onChange={(v) => set({ ...f, ai: { ...f.ai, unknown: v } })} />
-      </div>
-      <div className={group}>
-        <div className={title}>Funding</div>
-        {[
-          ["funded_30", "Funded <30 days"],
-          ["funded_90", "Funded <90 days"],
-          ["funded_180", "Funded <180 days"],
-        ].map(([k, l]) => (
-          <Check key={k} label={l} checked={f.funding.includes(k)} onChange={(v) => set({ ...f, funding: toggle(f.funding, k, v) })} />
-        ))}
-      </div>
-      <div className={group}>
-        <div className={title}>Startup age</div>
-        {[
-          ["new", "New"],
-          ["early", "Early stage"],
-          ["growing", "Growing"],
-          ["established", "Established"],
-        ].map(([k, l]) => (
-          <Check key={k} label={l} checked={f.age.includes(k)} onChange={(v) => set({ ...f, age: toggle(f.age, k, v) })} />
-        ))}
-      </div>
-      <div className={group}>
-        <div className={title}>Jobs</div>
-        <Check label="Currently hiring" checked={f.hiringOnly} onChange={(v) => set({ ...f, hiringOnly: v })} />
-        <Check label="Has jobs matching my profile" checked={f.matchingOnly} onChange={(v) => set({ ...f, matchingOnly: v })} />
-      </div>
-      <button className="text-xs text-gray-400 hover:text-gray-700" onClick={() => set(DEFAULT_FILTERS)}>
-        Reset filters
+
+      <Group title="Job role" hint={roles.length ? "Cards show only jobs in these roles" : "Pick roles to focus on, or leave empty for all"} active={roles.length}>
+        <div className="flex flex-wrap gap-1.5">
+          {ROLE_CATEGORIES.map((r) => (
+            <Pill key={r} label={r} on={roles.includes(r)} onClick={() => set({ ...f, roles: toggle(roles, r) })} />
+          ))}
+        </div>
+      </Group>
+
+      <Group title="Location" active={f.locations.length}>
+        <div className="flex flex-wrap gap-1.5">
+          {LOCATION_OPTIONS.map((l) => (
+            <Pill
+              key={l}
+              label={l}
+              on={f.locations.includes(l)}
+              onClick={() => set({ ...f, locations: toggle(f.locations, l) })}
+              title={l === "Remote" ? "Remote jobs not restricted to another country" : l === "Remote - India" ? "Remote jobs explicitly open to India" : undefined}
+            />
+          ))}
+          <Pill label="Anywhere" on={f.locations.length === 0} onClick={() => set({ ...f, locations: [] })} />
+        </div>
+      </Group>
+
+      <Group title="Show only" active={[f.hiringOnly, f.matchingOnly, f.emailOnly].filter(Boolean).length}>
+        <div className="space-y-2">
+          <Switch label="Hiring now" hint="Has at least one open job" on={f.hiringOnly} onChange={(v) => set({ ...f, hiringOnly: v })} />
+          <Switch label="Has a job that fits me" hint="Great or good match" on={f.matchingOnly} onChange={(v) => set({ ...f, matchingOnly: v })} />
+          <Switch label="Has a contact email" hint="Published on their website" on={!!f.emailOnly} onChange={(v) => set({ ...f, emailOnly: v })} />
+        </div>
+      </Group>
+
+      <Group title="Funding" active={f.funding.length} defaultOpen={false}>
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            ["funded_30", "Last 30 days"],
+            ["funded_90", "Last 3 months"],
+            ["funded_180", "Last 6 months"],
+          ].map(([k, l]) => (
+            <Pill key={k} label={l} on={f.funding.includes(k)} onClick={() => set({ ...f, funding: toggle(f.funding, k) })} />
+          ))}
+        </div>
+      </Group>
+
+      <Group title="Startup type" active={aiActive} defaultOpen={false}>
+        <div className="flex flex-wrap gap-1.5">
+          <Pill label="AI" on={f.ai.ai} onClick={() => set({ ...f, ai: { ...f.ai, ai: !f.ai.ai } })} />
+          <Pill label="Non-AI" on={f.ai.nonAi} onClick={() => set({ ...f, ai: { ...f.ai, nonAi: !f.ai.nonAi } })} />
+          <Pill label="Unknown" on={f.ai.unknown} onClick={() => set({ ...f, ai: { ...f.ai, unknown: !f.ai.unknown } })} />
+        </div>
+      </Group>
+
+      <Group title="Startup age" active={f.age.length} defaultOpen={false}>
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            ["new", "New (2024+)"],
+            ["early", "Early stage"],
+            ["growing", "Growing"],
+            ["established", "Established"],
+          ].map(([k, l]) => (
+            <Pill key={k} label={l} on={f.age.includes(k)} onClick={() => set({ ...f, age: toggle(f.age, k) })} />
+          ))}
+        </div>
+      </Group>
+
+      <button className="w-full rounded-lg border border-gray-200 py-1.5 text-xs text-gray-500 hover:bg-gray-50" onClick={() => set(DEFAULT_FILTERS)}>
+        Reset all filters
       </button>
     </aside>
   );

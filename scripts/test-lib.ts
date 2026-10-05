@@ -8,6 +8,7 @@ import { classifyStartup } from "@/lib/classification";
 import { parseFundingHeadline, fundingStatus, isNewStartup } from "@/lib/funding";
 import { generateQueries } from "@/lib/discovery/queries";
 import { roleCategories } from "@/lib/jobs/roles";
+import { classifyEmail, contactLink, extractEmails } from "@/lib/emails";
 import { careersLink, jobPostingsFromJsonLd } from "@/sources/company";
 import type { CandidateProfile } from "@/lib/types";
 
@@ -179,6 +180,22 @@ t("JSON-LD JobPosting is read, remote India detected", () => {
   assert.ok(j.location?.includes("Pune"));
 });
 t("page without JobPosting gives no jobs", () => assert.deepEqual(jobPostingsFromJsonLd(`<script type="application/ld+json">{"@type":"Organization"}</script>`, "https://a.ai", "x"), []));
+
+console.log("emails");
+t("only the startup's own domain, mailto + plain text, entities decoded", () => {
+  const html = `<a href="mailto:careers@acme.ai">Jobs</a> write to hello&#64;acme.ai or ceo@gmail.com, partner@other.com, logo@2x.png, noreply@acme.ai, team@eu.acme.ai`;
+  const got = extractEmails(html, "acme.ai", "https://acme.ai").map((e) => `${e.email}:${e.type}`);
+  assert.deepEqual(got, ["careers@acme.ai:careers", "hello@acme.ai:general", "team@eu.acme.ai:general"]);
+});
+t("escaped characters in inline JSON don't leak into emails", () => {
+  const got = extractEmails(`{"html":"\\u003esupport@routable.com\\u003c/a\\u003e"}`, "routable.com", "https://routable.com").map((e) => e.email);
+  assert.deepEqual(got, ["support@routable.com"]);
+});
+t("first.last addresses are labelled 'person', team inboxes 'general'", () => {
+  assert.equal(classifyEmail("priya.sharma@acme.ai"), "person");
+  assert.equal(classifyEmail("compliance@acme.ai"), "general");
+});
+t("contact page link", () => assert.equal(contactLink(`<a href="/company/contact-us">Contact us</a>`, "https://acme.ai"), "https://acme.ai/company/contact-us"));
 
 console.log("queries");
 t("queries come from the profile", () => {

@@ -88,36 +88,40 @@ export function Dashboard() {
   const shown = useMemo(() => applyFilters(startups ?? [], f), [startups, f]);
   const today = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 
+  const lastRunLabel = lastRunAt ? new Date(lastRunAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : null;
+  const freshCount = (startups ?? []).filter((s) => s.is_fresh).length;
+
   return (
     <div className="space-y-5">
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white p-5">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Daily Startup Finder</h1>
-          <p className="text-sm text-gray-500">
-            Today: {today} · {f.locations.length ? f.locations.join(" + ") : "Any location"}
-          </p>
-        </div>
-        <button
-          onClick={findToday}
-          disabled={run?.running}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
-        >
-          {run?.running ? "Finding startups…" : "Find Startups Today"}
-        </button>
-      </section>
-
-      {run && (run.running || run.log.length > 0) && (
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <div className="text-sm font-medium text-gray-800">
-            {run.running ? "Discovery running… (YC pages are fetched politely, ~1.5 s apart)" : "Last run finished"}
-            <span className="ml-2 text-gray-500">
-              {run.stats.startups} startups processed · {run.stats.created} new · {run.stats.updated} updated · {run.stats.newJobs} new jobs
-              {run.stats.errors ? ` · ${run.stats.errors} errors` : ""}
-            </span>
+      <section className="rounded-xl border border-gray-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Startups hiring for you</h1>
+            <p className="text-sm text-gray-500">
+              {today} · Showing {f.locations.length ? f.locations.join(", ") : "all locations"}
+            </p>
           </div>
-          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs text-gray-600">{run.log.slice(-12).join("\n")}</pre>
-        </section>
-      )}
+          <button
+            onClick={findToday}
+            disabled={run?.running}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-70"
+          >
+            {run?.running && <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
+            {run?.running ? "Finding startups… (~3 min)" : "🔎 Find Startups Today"}
+          </button>
+        </div>
+        <ol className="mt-4 grid gap-2 text-xs text-gray-600 sm:grid-cols-3">
+          <li className="rounded-lg bg-gray-50 px-3 py-2">
+            <b className="text-gray-800">1. Find</b> — pulls hiring startups from Y Combinator, funding news, job boards and company careers pages.
+          </li>
+          <li className="rounded-lg bg-gray-50 px-3 py-2">
+            <b className="text-gray-800">2. Match</b> — scores every job against your resume: role, skills, location, experience.
+          </li>
+          <li className="rounded-lg bg-gray-50 px-3 py-2">
+            <b className="text-gray-800">3. Apply</b> — open the job, email the team, and track it under Applications.
+          </li>
+        </ol>
+      </section>
 
       {error && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
@@ -127,32 +131,41 @@ export function Dashboard() {
 
       {startups && startups.length > 0 && !run?.running && lastRunAt && new Date(lastRunAt).toDateString() !== new Date().toDateString() && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          No discovery run today yet. “New &amp; updated” is showing results from the last run on{" "}
-          <b>{new Date(lastRunAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</b>. Click <b>Find Startups Today</b> for fresh results.
+          You haven’t searched today yet — showing what was found on <b>{lastRunLabel}</b>. Click <b>Find Startups Today</b> for fresh results.
         </div>
       )}
 
-      {startups && (
-        <Summary
-          list={viewList}
-          label={
-            f.view === "today"
-              ? `New & updated in latest run${lastRunAt ? ` (${new Date(lastRunAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })})` : ""}`
-              : "All startups"
-          }
-        />
-      )}
+      {startups && <Summary list={viewList} label={f.view === "today" ? `Found in the latest search${lastRunLabel ? ` (${lastRunLabel})` : ""}` : "All startups found so far"} />}
 
-      <div className="grid gap-5 lg:grid-cols-[240px_1fr]">
-        <Filters f={f} set={setFilters} />
+      <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
         <div>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="text-gray-600">
-              Showing <b>{shown.length}</b> of {startups?.length ?? 0} startups
+          <Filters f={f} set={setFilters} />
+        </div>
+        <div>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
+              {(
+                [
+                  ["today", `New & updated (${freshCount})`],
+                  ["all", `All startups (${startups?.length ?? 0})`],
+                ] as const
+              ).map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setFilters({ ...f, view: v })}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium ${f.view === v ? "bg-gray-900 text-white" : "text-gray-600 hover:text-gray-900"}`}
+                  title={v === "today" ? "Startups that are new, or have new jobs / funding, in the latest search" : "Everything found so far"}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="text-gray-500">
+              <b className="text-gray-800">{shown.length}</b> match your filters
             </span>
             <label className="flex items-center gap-2 text-gray-600">
-              Sort by
-              <select value={f.sort} onChange={(e) => setFilters({ ...f, sort: e.target.value as FilterState["sort"] })} className="rounded border border-gray-300 bg-white px-2 py-1">
+              Sort
+              <select value={f.sort} onChange={(e) => setFilters({ ...f, sort: e.target.value as FilterState["sort"] })} className="rounded-lg border border-gray-200 bg-white px-2 py-1">
                 <option value="match">Best profile match</option>
                 <option value="discovered">Newest discovery</option>
                 <option value="funding">Newest funding</option>
@@ -168,16 +181,21 @@ export function Dashboard() {
             </div>
           )}
           {startups && startups.length > 0 && shown.length === 0 && (
-            <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
-              Nothing matches these filters.{" "}
-              {f.view === "today" && (
-                <button className="text-indigo-600 underline" onClick={() => setFilters({ ...f, view: "all" })}>
-                  Show all startups
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
+              No startups match these filters.
+              <div className="mt-3 flex justify-center gap-2">
+                {f.view === "today" && (
+                  <button className="rounded-lg border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50" onClick={() => setFilters({ ...f, view: "all" })}>
+                    Show all startups
+                  </button>
+                )}
+                <button className="rounded-lg border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50" onClick={() => setFilters(DEFAULT_FILTERS)}>
+                  Reset filters
                 </button>
-              )}
+              </div>
             </div>
           )}
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid items-start gap-4 xl:grid-cols-2">
             {shown.map((s) => (
               <StartupCard key={s.id} s={s} onChanged={load} />
             ))}

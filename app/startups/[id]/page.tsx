@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { loadStartups } from "@/lib/discovery/read";
 import { FUNDING_LABELS } from "@/lib/funding";
 import { StartupJobs } from "./StartupJobs";
+import { Emails } from "@/components/Emails";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,14 @@ export default async function StartupPage({ params }: { params: Promise<{ id: st
           <Field label="First discovered" value={new Date(s.first_discovered_at).toLocaleString("en-IN")} />
           <Field label="Last updated" value={`${new Date(s.last_updated_at).toLocaleString("en-IN")}${s.last_change_reason ? ` — ${s.last_change_reason}` : ""}`} />
         </dl>
+      </section>
+      <section className="rounded-lg border border-gray-200 bg-white p-5">
+        <h2 className="font-semibold">Contact emails</h2>
+        <p className="mb-2 text-xs text-gray-500">
+          Only addresses published on {s.domain ?? "their website"} itself, on their own domain. Never guessed. “Domain receives mail” means the domain has
+          mail servers; it doesn’t guarantee a particular inbox is read.
+        </p>
+        <Emails emails={s.emails} checked />
       </section>
       <section className="rounded-lg border border-gray-200 bg-white p-5">
         <h2 className="mb-2 font-semibold">Jobs ({s.jobs.length})</h2>

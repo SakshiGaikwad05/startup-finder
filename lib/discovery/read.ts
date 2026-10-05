@@ -145,6 +145,10 @@ export async function loadStartups(opts: { id?: number } = {}): Promise<StartupV
       show_again: s.show_again,
       is_fresh: s.show_again || new Date(s.first_discovered_at) >= today || new Date(s.last_updated_at) >= today,
       location_tags: [...tags],
+      // careers@ first, then general, then people
+      emails: [...(s.emails ?? [])].sort(
+        (a: any, b: any) => ["careers", "general", "person"].indexOf(a.type) - ["careers", "general", "person"].indexOf(b.type)
+      ),
       jobs: js,
       relevant_jobs: relevant.length,
       best_match: best,

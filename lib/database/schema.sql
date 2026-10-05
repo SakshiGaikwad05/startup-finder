@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS startups (
   last_change_reason        TEXT,
   show_again                BOOLEAN NOT NULL DEFAULT false
 );
+-- Contact emails found on the startup's own site: [{email, type, source_url, domain_accepts_mail}]
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS emails JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS emails_checked_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS startups_domain_uq ON startups (domain) WHERE domain IS NOT NULL;
 CREATE INDEX IF NOT EXISTS startups_norm_idx ON startups (normalized_name);
 CREATE INDEX IF NOT EXISTS startups_linkedin_idx ON startups (linkedin_url);

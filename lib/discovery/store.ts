@@ -161,6 +161,14 @@ export async function upsertStartup(r: StartupResult, profile: CandidateProfile)
     );
   }
 
+  // ----- emails (merge, newest check wins for each address) -----
+  if (r.emails) {
+    const [row] = await query<{ emails: any[] }>("SELECT emails FROM startups WHERE id = $1", [id]);
+    const byEmail = new Map<string, any>((row?.emails ?? []).map((e: any) => [e.email, e]));
+    for (const e of r.emails) byEmail.set(e.email, e);
+    await query("UPDATE startups SET emails = $2, emails_checked_at = now() WHERE id = $1", [id, JSON.stringify([...byEmail.values()])]);
+  }
+
   // ----- jobs -----
   const { newJobs, newRelevant } = await upsertJobs(id, r, profile);
   if (!created && newRelevant.length) {

@@ -1,7 +1,9 @@
 // Company websites: for known startups with a website, find the careers page on the homepage and read
 // jobs from (1) public Greenhouse / Lever / Ashby boards, or (2) schema.org JobPosting data embedded
 // in the careers page (the structured format Google for Jobs uses). Nothing is inferred from prose.
-import type { DiscoveryContext, JobResult, StartupResult, StartupSource } from "@/lib/types";
+import type { DiscoveryContext, FoundEmail, JobResult, StartupResult, StartupSource } from "@/lib/types";
+import { contactLink, extractEmails, withMxCheck } from "@/lib/emails";
+import { domainOf } from "@/lib/deduplication";
 import { cachedText } from "@/lib/http";
 import { parseRemote } from "@/lib/jobs/location";
 import { settings } from "@/config/settings";
@@ -90,6 +92,8 @@ export const companyCareersSource: StartupSource = {
     const out: StartupResult[] = [];
     const list = ctx.careersCandidates.slice(0, settings.maxCareersChecks);
     let withJobs = 0;
+    let withEmails = 0;
+    let careersFound = 0;
     for (const s of list) {
       try {
         const home = s.website.startsWith("http") ? s.website : `https://${s.website}`;
@@ -102,26 +106,46 @@ export const companyCareersSource: StartupSource = {
           ref = ref ?? findAtsRef(careersUrl) ?? findAtsRef(careersHtml);
         }
         if (!careersUrl && ref) careersUrl = atsBoardUrl(ref);
-        if (!careersUrl) continue;
+
+        // Emails published on the startup's own homepage, careers page and contact page.
+        const domain = domainOf(home);
+        let emails: FoundEmail[] = [];
+        if (domain) {
+          const pages: [string, string][] = [[home, html]];
+          if (careersHtml && careersUrl && domainOf(careersUrl) === domain) pages.push([careersUrl, careersHtml]);
+          const contactUrl = contactLink(html, home);
+          if (contactUrl && domainOf(contactUrl) === domain && contactUrl !== careersUrl) {
+            const contactHtml = await cachedText(contactUrl, 24 * 7).catch(() => "");
+            if (contactHtml) pages.push([contactUrl, contactHtml]);
+          }
+          const raw = new Map<string, ReturnType<typeof extractEmails>[number]>();
+          for (const [url, page] of pages) for (const e of extractEmails(page, domain, url)) if (!raw.has(e.email)) raw.set(e.email, e);
+          emails = await withMxCheck([...raw.values()]);
+          if (emails.length) withEmails++;
+        }
 
         let jobs: JobResult[] = [];
         if (ref) jobs = (await fetchAtsJobs(ref, "company_careers").catch(() => ({ jobs: [] as JobResult[] }))).jobs;
-        if (!jobs.length && careersHtml) jobs = jobPostingsFromJsonLd(careersHtml, careersUrl, "company_careers");
+        if (!jobs.length && careersHtml && careersUrl) jobs = jobPostingsFromJsonLd(careersHtml, careersUrl, "company_careers");
         if (jobs.length) withJobs++;
+        if (careersUrl) careersFound++;
         // Only send jobs when we actually read a job list, so existing jobs aren't marked inactive by mistake.
         out.push({
           name: s.name,
           website: s.website,
           careersUrl,
           source: "company_careers",
-          sourceUrl: careersUrl,
+          sourceUrl: careersUrl ?? home,
+          emails,
           ...(jobs.length ? { jobs } : {}),
         });
       } catch (e) {
         ctx.log(`Careers: ${s.name} skipped (${(e as Error).message})`);
       }
     }
-    ctx.log(`Careers: checked ${list.length} websites → ${out.length} careers pages, ${withJobs} with readable job lists.`);
+    ctx.log(
+      `Careers: checked ${list.length} websites → ${careersFound} careers pages, ${withJobs} with readable job lists, ${withEmails} with contact emails.`
+    );
     return out;
   },
 };

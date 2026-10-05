@@ -1,4 +1,6 @@
 // Shared types. `null` always means "unknown / not verified".
+import type { FoundEmail } from "@/lib/emails";
+export type { FoundEmail };
 
 export interface CandidateProfile {
   name?: string;
@@ -64,6 +66,8 @@ export interface StartupResult {
   source: string;
   sourceUrl: string;
   jobs?: JobResult[];
+  /** Emails found on the startup's own pages. Undefined = not checked this time. */
+  emails?: FoundEmail[];
 }
 
 export interface DiscoveryContext {
@@ -170,6 +174,7 @@ export interface StartupView {
   show_again: boolean;
   is_fresh: boolean; // new or updated in the latest run window, or "show again"
   location_tags: string[];
+  emails: FoundEmail[];
   jobs: JobView[];
   relevant_jobs: number;
   best_match: number;

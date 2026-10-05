@@ -112,9 +112,11 @@ export async function runDiscovery(onLog?: (m: string) => void): Promise<RunStat
       `SELECT s.id, s.name, s.website FROM startups s
        WHERE s.website IS NOT NULL
          AND (s.careers_url IS NULL
+              OR s.emails_checked_at IS NULL
               -- re-read boards we already found jobs on, so new openings show up daily
               OR EXISTS (SELECT 1 FROM jobs j WHERE j.startup_id = s.id AND j.source = 'company_careers'))
        ORDER BY (s.last_funding_date IS NOT NULL) DESC,
+                (s.emails_checked_at IS NULL) DESC,
                 EXISTS (SELECT 1 FROM jobs j WHERE j.startup_id = s.id AND j.is_active) ASC,
                 s.first_discovered_at DESC`
     );

@@ -28,13 +28,15 @@ export function StatusSelect({
     setBusy(false);
     onChanged?.();
   }
+  const tracked = status !== "Not Applied";
   return (
     <select
       aria-label="Application status"
+      title="Track your application"
       value={status}
       disabled={busy}
       onChange={(e) => change(e.target.value)}
-      className="rounded border border-gray-300 bg-white px-1 py-0.5 text-xs"
+      className={`rounded-md border px-1.5 py-1 text-xs ${tracked ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-gray-200 bg-white text-gray-600"}`}
     >
       {APPLICATION_STATUSES.map((s) => (
         <option key={s}>{s}</option>
@@ -55,32 +57,44 @@ export function JobCard({
   showCompany?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const loc = job.remote === "yes" ? `${job.location ?? "Remote"}` : job.location ?? "Location unknown";
+  const where =
+    job.remote === "yes"
+      ? `Remote${job.remote_scope ? ` (${job.remote_scope === "India" ? "India" : job.remote_scope})` : ""}`
+      : job.location ?? "Location not listed";
+  const facts = [where, job.employment_type, job.salary, job.min_experience ? `Exp: ${job.min_experience}` : null].filter(Boolean);
   return (
-    <div className="border-t border-gray-100 py-2 first:border-t-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => setOpen(!open)} className="text-left text-sm font-medium text-gray-900 hover:underline" title="Show why this matches">
-          {showCompany ? <span className="text-gray-500">{showCompany} · </span> : null}
-          {job.job_title}
-        </button>
-        <MatchBadge match={job.match} />
-        <span className="text-xs text-gray-500">{loc}</span>
-        {job.remote === "yes" && <span className="rounded bg-sky-50 px-1 text-xs text-sky-700">Remote{job.remote_scope ? ` · ${job.remote_scope}` : ""}</span>}
-        {job.salary && <span className="text-xs text-gray-500">{job.salary}</span>}
-        <span className="ml-auto flex items-center gap-2">
-          <a href={job.apply_url ?? job.job_url} target="_blank" rel="noreferrer" className="text-xs font-medium text-indigo-600 hover:underline">
+    <div className="py-2.5">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {showCompany && <span className="text-sm text-gray-500">{showCompany} ·</span>}
+            <span className="text-sm font-medium text-gray-900">{job.job_title}</span>
+            <MatchBadge match={job.match} />
+          </div>
+          <div className="mt-0.5 truncate text-xs text-gray-500">{facts.join(" · ")}</div>
+          <button onClick={() => setOpen(!open)} className="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-800">
+            {open ? "Hide details ▴" : "Why this match? ▾"}
+          </button>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <a
+            href={job.apply_url ?? job.job_url}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md border border-indigo-200 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+          >
             Apply ↗
           </a>
           <StatusSelect startupId={job.startup_id} jobId={job.id} application={application} onChanged={onChanged} />
-        </span>
+        </div>
       </div>
       {open && (
         <>
           <MatchWhy match={job.match} />
-          <div className="mt-1 text-xs text-gray-400">
-            {job.employment_type ?? "Type unknown"} · Posted: {job.posted_date ?? "unknown"} · Min. experience: {job.min_experience ?? "not stated"} · Source:{" "}
+          <div className="mt-1 text-[11px] text-gray-400">
+            Posted: {job.posted_date ?? "unknown"} · Found on{" "}
             <a className="underline" href={job.source_url ?? job.job_url} target="_blank" rel="noreferrer">
-              {job.source}
+              {SOURCE_NAMES[job.source] ?? job.source}
             </a>
           </div>
         </>
@@ -88,3 +102,11 @@ export function JobCard({
     </div>
   );
 }
+
+export const SOURCE_NAMES: Record<string, string> = {
+  yc: "Y Combinator",
+  remotive: "Remotive",
+  funding_rss: "funding news",
+  company_careers: "company careers page",
+  search: "web search",
+};
