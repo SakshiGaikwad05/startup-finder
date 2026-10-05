@@ -1,0 +1,27 @@
+{
+  "_source": "Fictional sample profile used by the unit tests (npm test). Real users create their own profile in the app at /onboarding.",
+  "name": "Sample Candidate",
+  "target_roles": [
+    "Software Engineer",
+    "Full Stack Developer",
+    "Backend Developer",
+    "Frontend Developer",
+    "Python Developer",
+    "AI Engineer"
+  ],
+  "skills": ["REST APIs", "Authentication", "Debugging", "API Testing"],
+  "programming_languages": ["JavaScript", "TypeScript", "Python", "SQL"],
+  "frameworks": ["React", "Next.js", "Node.js", "Express.js", "FastAPI"],
+  "libraries": ["Pandas"],
+  "databases": ["MongoDB", "PostgreSQL"],
+  "cloud_tools": ["Git", "Postman"],
+  "testing_skills": ["API Testing (Postman)"],
+  "ai_ml_skills": ["LLM", "Prompt Engineering"],
+  "projects": [],
+  "experience": [],
+  "tech_experience_years": 0.75,
+  "education": [],
+  "preferred_locations": ["Pune", "Remote", "Remote - India"],
+  "remote_preference": "remote_or_pune",
+  "preferred_startup_types": []
+}

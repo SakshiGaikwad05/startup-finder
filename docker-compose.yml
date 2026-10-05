@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: startup-finder-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: startup
+      POSTGRES_PASSWORD: startup
+      POSTGRES_DB: startup_finder
+    ports:
+      - "5433:5432"
+    volumes:
+      - startup_finder_data:/var/lib/postgresql/data
+
+volumes:
+  startup_finder_data:

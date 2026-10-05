@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.cache/
+.pgdata/
+.claude/
+.env
+.env.local
+next-env.d.ts
+*.tsbuildinfo
