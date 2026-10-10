@@ -5,7 +5,7 @@ services:
     name: startup-finder
     runtime: node
     plan: free
-    region: singapore
+    region: ohio # same AWS region as the Neon database (us-east-2) for low latency
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
