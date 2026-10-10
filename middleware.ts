@@ -8,7 +8,7 @@ const APP_PAGES = ["/dashboard", "/jobs", "/applications", "/settings", "/startu
 export function middleware(req: NextRequest) {
   const password = process.env.APP_PASSWORD;
   if (password) {
-    const user = process.env.APP_USER || "sakshi";
+    const user = process.env.APP_USER || "admin";
     const header = req.headers.get("authorization") ?? "";
     let ok = false;
     if (header.startsWith("Basic ")) {
