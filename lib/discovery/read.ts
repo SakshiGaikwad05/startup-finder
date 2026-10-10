@@ -1,6 +1,7 @@
 // Builds the dashboard read model. Matching is computed here, from the *current* profile,
 // so editing the profile on the Settings page immediately changes scores.
-import { getProfile, query } from "@/lib/database";
+import { query } from "@/lib/database";
+import type { AppUser } from "@/lib/users";
 import { matchJob } from "@/lib/matching";
 import { candidateSkillSet } from "@/lib/matching/skills";
 import { companyLocationTags, locationTags } from "@/lib/jobs/location";
@@ -28,9 +29,10 @@ export async function freshWindowStart(): Promise<Date> {
 const iso = (d: any) => (d ? new Date(d).toISOString() : null);
 const dateOnly = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
-export async function loadStartups(opts: { id?: number } = {}): Promise<StartupView[]> {
-  const profile = await getProfile();
+export async function loadStartups(user: AppUser, opts: { id?: number } = {}): Promise<StartupView[]> {
+  const profile = user.profile;
   const owned = candidateSkillSet(profile);
+  const pinned = new Set(user.pinned ?? []);
   const where = opts.id ? "WHERE id = $1" : "";
   const startups = await query(`SELECT * FROM startups ${where} ORDER BY id`, opts.id ? [opts.id] : []);
   const jobs = await query(
@@ -38,8 +40,9 @@ export async function loadStartups(opts: { id?: number } = {}): Promise<StartupV
     opts.id ? [opts.id] : []
   );
   const apps = await query<any>(
-    `SELECT a.*, j.job_title FROM applications a LEFT JOIN jobs j ON j.id = a.job_id ${opts.id ? "WHERE a.startup_id = $1" : ""}`,
-    opts.id ? [opts.id] : []
+    `SELECT a.*, j.job_title FROM applications a LEFT JOIN jobs j ON j.id = a.job_id
+     WHERE a.user_id = $1 ${opts.id ? "AND a.startup_id = $2" : ""}`,
+    opts.id ? [user.id, opts.id] : [user.id]
   );
   const today = await freshWindowStart();
 
@@ -142,8 +145,8 @@ export async function loadStartups(opts: { id?: number } = {}): Promise<StartupV
       last_seen_at: iso(s.last_seen_at)!,
       last_updated_at: iso(s.last_updated_at)!,
       last_change_reason: s.last_change_reason,
-      show_again: s.show_again,
-      is_fresh: s.show_again || new Date(s.first_discovered_at) >= today || new Date(s.last_updated_at) >= today,
+      show_again: pinned.has(s.id),
+      is_fresh: pinned.has(s.id) || new Date(s.first_discovered_at) >= today || new Date(s.last_updated_at) >= today,
       location_tags: [...tags],
       // careers@ first, then general, then people
       emails: [...(s.emails ?? [])].sort(

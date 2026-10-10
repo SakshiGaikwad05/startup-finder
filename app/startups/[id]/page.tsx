@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { currentUser } from "@/lib/users";
 import { loadStartups } from "@/lib/discovery/read";
 import { FUNDING_LABELS } from "@/lib/funding";
 import { StartupJobs } from "./StartupJobs";
@@ -26,7 +27,9 @@ function Field({ label, value, href, source }: { label: string; value: React.Rea
 
 export default async function StartupPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [s] = await loadStartups({ id: Number(id) });
+  const user = await currentUser();
+  if (!user) redirect("/onboarding");
+  const [s] = await loadStartups(user, { id: Number(id) });
   if (!s) notFound();
   const src = (f: string) => s.field_sources[f]?.url ?? null;
   return (

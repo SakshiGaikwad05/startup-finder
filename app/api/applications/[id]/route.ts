@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/database";
 import { APPLICATION_STATUSES } from "@/lib/types";
+import { currentUser } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
 
 /** PATCH { status?, notes?, applied_at?, application_url? } */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await currentUser();
+  if (!user) return NextResponse.json({ error: "no_profile" }, { status: 401 });
   const { id } = await params;
   const b = await req.json();
   if (b.status !== undefined && !APPLICATION_STATUSES.includes(b.status)) {
@@ -21,7 +24,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
          WHEN $2 = 'Applied' AND applied_at IS NULL THEN CURRENT_DATE
          ELSE applied_at END,
        updated_at = now()
-     WHERE id = $1 RETURNING *`,
+     WHERE id = $1 AND user_id = $9 RETURNING *`,
     [
       Number(id),
       b.status ?? null,
@@ -31,6 +34,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       b.application_url || null,
       b.applied_at !== undefined,
       b.applied_at || null,
+      user.id,
     ]
   );
   if (!rows[0]) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -38,7 +42,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await currentUser();
+  if (!user) return NextResponse.json({ error: "no_profile" }, { status: 401 });
   const { id } = await params;
-  await query("DELETE FROM applications WHERE id = $1", [Number(id)]);
+  await query("DELETE FROM applications WHERE id = $1 AND user_id = $2", [Number(id), user.id]);
   return NextResponse.json({ ok: true });
 }

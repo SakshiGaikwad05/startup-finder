@@ -19,6 +19,26 @@ profile is seeded from `config/candidate_profile.json`.
 Other commands: `npm run discover` (same as the button, from the terminal), `npm test` (logic checks),
 `npm run typecheck`, `npm run db:local:stop`.
 
+## For users
+
+Anyone can use it — no sign-up:
+1. **Set up a profile** (`/onboarding`): upload a resume PDF (skills/roles are detected and shown for review; the file isn't stored) or type skills, pick target roles and experience, locations, and preferred startup types (AI, HealthTech, …).
+2. **Dashboard**: startups and jobs are shared, but match scores, filters, pins and the application tracker are per person.
+3. The profile is kept in a secure cookie. **My profile → Your private link** reopens it on another device.
+
+"Find Startups Today" runs one shared search; if one ran in the last 3 hours, users just get those results.
+
+## Deploy (Render + Neon)
+
+1. Create a free PostgreSQL database on [Neon](https://neon.tech) and copy its connection string.
+2. On [Render](https://render.com): **New → Blueprint** → pick this repo (uses `render.yaml`), or **New → Web Service** with
+   build `npm ci --include=dev && npm run build`, start `npm start`.
+3. Environment: `DATABASE_URL` = Neon string, `NODE_VERSION` = `22`. Leave `APP_PASSWORD` empty for a public site.
+4. Custom domain: Render → Settings → Custom Domains → add e.g. `startups.sakshii.tech`, then add the CNAME record it shows at your DNS provider.
+5. Optional daily search: a free scheduler (e.g. cron-job.org) sending `POST https://<your-domain>/api/discover` with header `x-cron-secret: <CRON_SECRET>`.
+
+Tables are created automatically on first request.
+
 ## How it works
 
 `Find Startups Today` runs each source in `sources/` and stores results:

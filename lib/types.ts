@@ -19,6 +19,8 @@ export interface CandidateProfile {
   education: { degree: string; institution: string; graduated?: number }[];
   preferred_locations: string[];
   remote_preference: string;
+  /** e.g. ["AI", "HealthTech"]; empty = any. "AI" means is_ai startups; others are industries. */
+  preferred_startup_types?: string[];
   [key: string]: unknown;
 }
 

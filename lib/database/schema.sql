@@ -95,8 +95,23 @@ CREATE TABLE IF NOT EXISTS applications (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS applications_startup_job_uq
-  ON applications (startup_id, COALESCE(job_id, 0));
+-- ---------- multi-user ----------
+-- Each visitor is a user identified by a secret token in a cookie (no passwords).
+-- Startups and jobs are shared; profile, pins and applications are per user.
+CREATE TABLE IF NOT EXISTS users (
+  id          SERIAL PRIMARY KEY,
+  token       TEXT NOT NULL UNIQUE,
+  profile     JSONB NOT NULL,
+  pinned      INT[] NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS user_id INT REFERENCES users(id) ON DELETE CASCADE;
+DROP INDEX IF EXISTS applications_startup_job_uq;
+CREATE UNIQUE INDEX IF NOT EXISTS applications_user_startup_job_uq
+  ON applications (COALESCE(user_id, 0), startup_id, COALESCE(job_id, 0));
 
 -- One row per "Find Startups Today" run, so the dashboard can say what is new today.
 CREATE TABLE IF NOT EXISTS discovery_runs (

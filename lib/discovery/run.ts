@@ -1,5 +1,5 @@
 // "Find Startups Today": runs every enabled source, stores results, records a run log.
-import { getProfile, query } from "@/lib/database";
+import { getDiscoveryProfile, query } from "@/lib/database";
 import { generateQueries } from "./queries";
 import { upsertStartup } from "./store";
 import { ENRICHERS, SOURCES } from "@/sources";
@@ -60,7 +60,7 @@ export async function runDiscovery(onLog?: (m: string) => void): Promise<RunStat
   const [{ id: runId }] = await query<{ id: number }>("INSERT INTO discovery_runs DEFAULT VALUES RETURNING id");
   s.runId = runId;
   try {
-    const profile = await getProfile();
+    const profile = await getDiscoveryProfile();
     const ctx: DiscoveryContext = {
       profile,
       queries: generateQueries(profile),

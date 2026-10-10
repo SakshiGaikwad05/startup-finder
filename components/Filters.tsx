@@ -2,6 +2,18 @@
 import type { StartupView } from "@/lib/types";
 import { LOCATION_OPTIONS } from "@/lib/types";
 import { ROLE_CATEGORIES } from "@/lib/jobs/roles";
+import { STARTUP_TYPE_OPTIONS } from "@/lib/resume/parse";
+import type { CandidateProfile } from "@/lib/types";
+
+/** Default filters for a user: their locations and preferred startup types. */
+export function filtersForProfile(p: CandidateProfile | null | undefined): FilterState {
+  if (!p) return DEFAULT_FILTERS;
+  const locs = (p.preferred_locations ?? []).filter((l) => (LOCATION_OPTIONS as readonly string[]).includes(l));
+  // Someone who wants "Remote - India" should also see remote jobs whose region isn't stated.
+  if (locs.includes("Remote - India") && !locs.includes("Remote")) locs.push("Remote");
+  // Start on "All startups" (best matches first) so a new user never lands on an empty view.
+  return { ...DEFAULT_FILTERS, view: "all", locations: locs.length ? locs : DEFAULT_FILTERS.locations, types: p.preferred_startup_types ?? [] };
+}
 
 export interface FilterState {
   view: "today" | "all";
@@ -10,6 +22,7 @@ export interface FilterState {
   funding: string[]; // funded_30 | funded_90 | funded_180
   age: string[]; // new | early | growing | established
   roles: string[]; // job-role categories; empty = all roles
+  types?: string[]; // startup types ("AI", "HealthTech", …); empty = all
   hiringOnly: boolean;
   matchingOnly: boolean;
   emailOnly?: boolean;
@@ -52,6 +65,8 @@ export function applyFilters(list: StartupView[], f: FilterState): StartupView[]
     if (roles.length && s.jobs.length === 0) return false;
     if (f.view === "today" && !s.is_fresh) return false;
     if (f.locations.length && !s.location_tags.some((t) => f.locations.includes(t))) return false;
+    const types = f.types ?? [];
+    if (types.length && !((types.includes("AI") && (s.is_ai === true || s.industry === "AI Startup")) || (s.industry && types.includes(s.industry)))) return false;
     if (s.is_ai === true && !f.ai.ai) return false;
     if (s.is_ai === false && !f.ai.nonAi) return false;
     if (s.is_ai === null && !f.ai.unknown) return false;
@@ -130,7 +145,7 @@ function toggle(list: string[], v: string) {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
 }
 
-export function Filters({ f, set }: { f: FilterState; set: (f: FilterState) => void }) {
+export function Filters({ f, set, defaults = DEFAULT_FILTERS }: { f: FilterState; set: (f: FilterState) => void; defaults?: FilterState }) {
   const roles = f.roles ?? [];
   const aiActive = [f.ai.ai, f.ai.nonAi, f.ai.unknown].filter((x) => !x).length;
   return (
@@ -185,11 +200,12 @@ export function Filters({ f, set }: { f: FilterState; set: (f: FilterState) => v
         </div>
       </Group>
 
-      <Group title="Startup type" active={aiActive} defaultOpen={false}>
+      <Group title="Startup type" active={(f.types ?? []).length + aiActive} hint={(f.types ?? []).length ? undefined : "Any type"}>
         <div className="flex flex-wrap gap-1.5">
-          <Pill label="AI" on={f.ai.ai} onClick={() => set({ ...f, ai: { ...f.ai, ai: !f.ai.ai } })} />
-          <Pill label="Non-AI" on={f.ai.nonAi} onClick={() => set({ ...f, ai: { ...f.ai, nonAi: !f.ai.nonAi } })} />
-          <Pill label="Unknown" on={f.ai.unknown} onClick={() => set({ ...f, ai: { ...f.ai, unknown: !f.ai.unknown } })} />
+          {STARTUP_TYPE_OPTIONS.map((t) => (
+            <Pill key={t} label={t} on={(f.types ?? []).includes(t)} onClick={() => set({ ...f, types: toggle(f.types ?? [], t) })} />
+          ))}
+          <Pill label="Any" on={!(f.types ?? []).length} onClick={() => set({ ...f, types: [] })} />
         </div>
       </Group>
 
@@ -206,7 +222,7 @@ export function Filters({ f, set }: { f: FilterState; set: (f: FilterState) => v
         </div>
       </Group>
 
-      <button className="w-full rounded-lg border border-gray-200 py-1.5 text-xs text-gray-500 hover:bg-gray-50" onClick={() => set(DEFAULT_FILTERS)}>
+      <button className="w-full rounded-lg border border-gray-200 py-1.5 text-xs text-gray-500 hover:bg-gray-50" onClick={() => set(defaults)}>
         Reset all filters
       </button>
     </aside>

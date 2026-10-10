@@ -9,6 +9,7 @@ import { parseFundingHeadline, fundingStatus, isNewStartup } from "@/lib/funding
 import { generateQueries } from "@/lib/discovery/queries";
 import { roleCategories } from "@/lib/jobs/roles";
 import { classifyEmail, contactLink, extractEmails } from "@/lib/emails";
+import { parseResumeText } from "@/lib/resume/parse";
 import { careersLink, jobPostingsFromJsonLd } from "@/sources/company";
 import type { CandidateProfile } from "@/lib/types";
 
@@ -196,6 +197,22 @@ t("first.last addresses are labelled 'person', team inboxes 'general'", () => {
   assert.equal(classifyEmail("compliance@acme.ai"), "general");
 });
 t("contact page link", () => assert.equal(contactLink(`<a href="/company/contact-us">Contact us</a>`, "https://acme.ai"), "https://acme.ai/company/contact-us"));
+
+console.log("resume parsing");
+t("finds skills, roles, locations and stated experience", () => {
+  const r = parseResumeText(
+    "Priya Shah, Pune, Maharashtra. Full Stack Developer with 2 years of experience. Built REST APIs in Node.js and Express, frontends in React and Next.js, data in PostgreSQL. Open to remote."
+  );
+  for (const s of ["Node.js", "Express.js", "React", "Next.js", "PostgreSQL", "REST APIs"]) assert.ok(r.skills.includes(s), s);
+  assert.ok(r.roles.includes("Full Stack Developer"));
+  assert.deepEqual(r.locations, ["Pune", "Remote"]);
+  assert.equal(r.experienceYears, 2);
+});
+t("doesn't invent Go/TypeScript from short words", () => {
+  const r = parseResumeText("I like to go hiking. TS is my initials. Worked on Excel reports.");
+  assert.ok(!r.skills.includes("Go") && !r.skills.includes("TypeScript"));
+});
+t("AI role inferred from LLM skills", () => assert.ok(parseResumeText("Built agents with LangGraph and Groq LLM.").roles.includes("AI Engineer")));
 
 console.log("queries");
 t("queries come from the profile", () => {

@@ -11,7 +11,7 @@ const NAV = [
   ["/dashboard", "Dashboard"],
   ["/jobs", "Jobs"],
   ["/applications", "Applications"],
-  ["/settings", "Settings"],
+  ["/settings", "My profile"],
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

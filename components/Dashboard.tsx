@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StartupView } from "@/lib/types";
-import { applyFilters, DEFAULT_FILTERS, Filters, type FilterState } from "./Filters";
+import { useRouter, useSearchParams } from "next/navigation";
+import { applyFilters, DEFAULT_FILTERS, Filters, filtersForProfile, type FilterState } from "./Filters";
 import { StartupCard } from "./StartupCard";
 import { Summary } from "./Summary";
 
@@ -15,23 +16,46 @@ interface RunState {
 const FILTER_KEY = "dsf.filters.v1";
 
 export function Dashboard() {
+  const router = useRouter();
+  const params = useSearchParams();
   const [startups, setStartups] = useState<StartupView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [f, setF] = useState<FilterState>(DEFAULT_FILTERS);
+  const [defaults, setDefaults] = useState<FilterState>(DEFAULT_FILTERS);
   const [run, setRun] = useState<RunState | null>(null);
   const [lastRunAt, setLastRunAt] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
+  const filtersReady = useRef(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/startups", { cache: "no-store" });
     const data = await res.json();
+    if (res.status === 401) {
+      router.replace("/onboarding");
+      return;
+    }
     if (!res.ok) setError(data.error ?? "Failed to load");
     else {
       setError(null);
       setStartups(data.startups);
       setLastRunAt(data.lastRun?.started_at ?? null);
+      setName((data.profile?.name as string) || null);
+      // First load: filters default to this user's preferences unless they've changed them before.
+      if (!filtersReady.current) {
+        filtersReady.current = true;
+        const d = filtersForProfile(data.profile);
+        setDefaults(d);
+        let saved: Partial<FilterState> | null = null;
+        try {
+          const raw = localStorage.getItem(FILTER_KEY);
+          if (raw) saved = JSON.parse(raw);
+        } catch {}
+        setF(saved ? { ...d, ...saved } : d);
+      }
     }
-  }, []);
+  }, [router]);
 
   const watchRun = useCallback(() => {
     if (poll.current) return;
@@ -47,11 +71,12 @@ export function Dashboard() {
   }, [load]);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(FILTER_KEY);
-      if (saved) setF({ ...DEFAULT_FILTERS, ...JSON.parse(saved) });
-    } catch {}
     load();
+    // Just finished onboarding: fetch startups for them right away (or use today's fresh results).
+    if (params.get("welcome") === "1") {
+      router.replace("/dashboard");
+      findToday(true);
+    }
     fetch("/api/discover", { cache: "no-store" })
       .then((r) => r.json())
       .then((s: RunState) => {
@@ -64,6 +89,7 @@ export function Dashboard() {
     return () => {
       if (poll.current) clearInterval(poll.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, watchRun]);
 
   function setFilters(next: FilterState) {
@@ -73,13 +99,23 @@ export function Dashboard() {
     } catch {}
   }
 
-  async function findToday() {
+  async function findToday(welcome = false) {
     const res = await fetch("/api/discover", { method: "POST" });
     const data = await res.json();
     if (data.error) {
       setError(data.error);
       return;
     }
+    if (data.upToDate) {
+      const ago = Math.max(1, Math.round((Date.now() - new Date(data.lastRunAt).getTime()) / 60000));
+      setNotice(
+        welcome
+          ? `Welcome! Here are startups matched to your profile, from a search ${ago < 60 ? `${ago} min` : `${Math.round(ago / 60)} h`} ago.`
+          : `Already up to date — startups were searched ${ago < 60 ? `${ago} min` : `${Math.round(ago / 60)} h`} ago. Try again later for new ones.`
+      );
+      return;
+    }
+    if (welcome) setNotice("Welcome! Searching Y Combinator, funding news and careers pages for you — this takes a few minutes.");
     setRun(data);
     watchRun();
   }
@@ -96,13 +132,13 @@ export function Dashboard() {
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Startups hiring for you</h1>
+            <h1 className="text-2xl font-semibold text-gray-900">{name ? `Hi ${name} — startups hiring for you` : "Startups hiring for you"}</h1>
             <p className="text-sm text-gray-500">
               {today} · Showing {f.locations.length ? f.locations.join(", ") : "all locations"}
             </p>
           </div>
           <button
-            onClick={findToday}
+            onClick={() => findToday()}
             disabled={run?.running}
             className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-70"
           >
@@ -123,6 +159,15 @@ export function Dashboard() {
         </ol>
       </section>
 
+      {notice && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} aria-label="Dismiss" className="text-indigo-400 hover:text-indigo-800">
+            ×
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
           <b>Error:</b> {error}
@@ -139,7 +184,7 @@ export function Dashboard() {
 
       <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
         <div>
-          <Filters f={f} set={setFilters} />
+          <Filters f={f} set={setFilters} defaults={defaults} />
         </div>
         <div>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm">

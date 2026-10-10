@@ -3,6 +3,8 @@ node_modules/
 .cache/
 .pgdata/
 .claude/
+# Exported contact lists — personal data, keep out of git
+exports/
 .env
 .env.local
 next-env.d.ts

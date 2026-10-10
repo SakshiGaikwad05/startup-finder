@@ -17,7 +17,8 @@
     "next": "^15.5.0",
     "pg": "^8.13.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "unpdf": "^1.8.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.0",
