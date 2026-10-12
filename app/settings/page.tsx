@@ -1,7 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Icon } from "@/components/Icon";
+import { api } from "@/components/api";
+import { Banner, btnPrimary, CardSkeleton, PageHeader } from "@/components/ui";
 
 interface Me {
   user: { id: number; profile: Record<string, any>; privateLinkToken: string };
@@ -9,11 +12,24 @@ interface Me {
   canonicalSkills: string[];
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="grid gap-1 border-b border-gray-100 py-2 text-sm sm:grid-cols-[180px_1fr]">
-      <div className="text-gray-500">{label}</div>
-      <div className="text-gray-900">{children}</div>
+    <div className="border-t border-gray-100 py-4 first:border-t-0 first:pt-0 last:pb-0">
+      <h3 className="mb-2 text-sm font-semibold text-gray-500">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function Chips({ items, empty }: { items: string[]; empty: string }) {
+  if (!items.length) return <p className="text-sm text-gray-500">{empty}</p>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((s) => (
+        <span key={s} className="rounded-lg bg-gray-100 px-2.5 py-1 text-[13px] font-medium text-gray-800">
+          {s}
+        </span>
+      ))}
     </div>
   );
 }
@@ -21,22 +37,45 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 export default function SettingsPage() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"no" | "yes" | "manual">("no");
+  const [error, setError] = useState<string | null>(null);
+  const linkRef = useRef<HTMLInputElement>(null);
 
+  async function load() {
+    const { ok, status, data, error } = await api<Me>("/api/me");
+    if (status === 401) return router.replace("/onboarding");
+    if (!ok) return setError(error);
+    setError(null);
+    setMe(data);
+  }
   useEffect(() => {
-    fetch("/api/me", { cache: "no-store" }).then(async (r) => {
-      if (r.status === 401) return router.replace("/onboarding");
-      setMe(await r.json());
-    });
-  }, [router]);
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  if (!me) return <div className="text-sm text-gray-500">Loading…</div>;
+  if (!me)
+    return error ? (
+      <Banner
+        tone="error"
+        action={
+          <button onClick={load} className="rounded-lg bg-white px-3 py-1.5 text-[13px] font-semibold text-gray-900 shadow-sm hover:bg-gray-50">
+            Try again
+          </button>
+        }
+      >
+        {error}
+      </Banner>
+    ) : (
+      <CardSkeleton count={2} />
+    );
   const p = me.user.profile;
   const link = typeof window !== "undefined" ? `${window.location.origin}/api/me/link?t=${me.user.privateLinkToken}` : "";
+  const years = Number(p.tech_experience_years ?? 0);
 
   async function startOver() {
     if (!confirm("Sign out of this profile on this device? You can come back using your private link.")) return;
-    await fetch("/api/me", { method: "DELETE" });
+    const { ok, error } = await api("/api/me", { method: "DELETE" });
+    if (!ok) return setError(error);
     try {
       localStorage.removeItem("dsf.filters.v1");
     } catch {}
@@ -44,58 +83,113 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Your profile</h1>
-          <Link href="/onboarding" className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
+    <div className="space-y-6">
+      <PageHeader
+        title="Your profile"
+        subtitle="We match startups and jobs using what's on this page."
+        actions={
+          <Link href="/onboarding" className={btnPrimary}>
+            <Icon name="pencil" className="h-4 w-4" />
             Edit profile
           </Link>
-        </div>
-        <p className="mt-1 text-sm text-gray-500">Matching only counts the skills and roles listed here.</p>
-        <div className="mt-3">
-          {p.name && <Row label="Name">{p.name}</Row>}
-          <Row label="Target roles">{(p.target_roles ?? []).join(", ") || "—"}</Row>
-          <Row label="Experience">{p.tech_experience_years ?? 0} years</Row>
-          <Row label="Locations">{(p.preferred_locations ?? []).join(", ") || "—"}</Row>
-          <Row label="Startup types">{(p.preferred_startup_types ?? []).join(", ") || "Any"}</Row>
-          <Row label="Skills recognised">
-            <div className="flex flex-wrap gap-1">
-              {me.canonicalSkills.map((s) => (
-                <span key={s} className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">
-                  {s}
-                </span>
-              ))}
-            </div>
-          </Row>
-        </div>
-      </section>
+        }
+      />
 
-      <div className="space-y-6">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="font-semibold">Your private link</h2>
-          <p className="mt-1 text-xs text-gray-500">
-            Your profile is saved in this browser. Open this link on another device to get your profile, saved startups and applications there.
-            Keep it private — anyone with it can see your profile.
+      {error && (
+        <Banner tone="error" onDismiss={() => setError(null)}>
+          {error}
+        </Banner>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
+          <div className="mb-5 flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 font-display text-xl font-bold text-brand-700" aria-hidden="true">
+              {(p.name as string | undefined)?.trim()?.[0]?.toUpperCase() ?? <Icon name="user" className="h-6 w-6" />}
+            </div>
+            <div>
+              <div className="font-display text-xl font-semibold text-gray-900">{p.name || "Student"}</div>
+              <div className="text-sm text-gray-500">
+                {p.explorer ? "Exploring, no skills added yet" : years === 0 ? "Fresher" : `About ${years} year${years === 1 ? "" : "s"} of experience`}
+              </div>
+            </div>
+          </div>
+
+          {p.explorer ? (
+            <div className="rounded-xl bg-brand-50 p-4 text-sm text-gray-800">
+              <p>You skipped the setup, so you&apos;re seeing recently funded startups without personal matches.</p>
+              <Link href="/onboarding" className="mt-2 inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline">
+                Add your skills <Icon name="arrow-right" className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          ) : (
+            <>
+              <Section title="Roles you want">
+                <Chips items={p.target_roles ?? []} empty="No roles picked" />
+              </Section>
+              <Section title="Where you want to work">
+                <Chips items={p.preferred_locations ?? []} empty="Anywhere" />
+              </Section>
+              <Section title="Kinds of startup">
+                <Chips items={p.preferred_startup_types ?? []} empty="Any kind" />
+              </Section>
+              <Section title={`Skills we recognise (${me.canonicalSkills.length})`}>
+                <Chips items={me.canonicalSkills} empty="No skills yet. Add some so we can match you." />
+              </Section>
+            </>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-600">
+            <Icon name="link" className="h-5 w-5" />
+          </div>
+          <h2 className="mt-3 text-lg font-semibold text-gray-900">Your private link</h2>
+          <p className="mt-1 text-sm leading-relaxed text-gray-600">
+            There&apos;s no password. Your profile is saved in this browser. Open this link on your phone or another laptop to get your profile, saved startups and
+            applications there too.
           </p>
-          <div className="mt-2 flex gap-2">
-            <input readOnly value={link} className="min-w-0 flex-1 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs" onFocus={(e) => e.target.select()} />
+          <div className="mt-4 flex gap-2">
+            <input
+              ref={linkRef}
+              readOnly
+              value={link}
+              aria-label="Your private link"
+              className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700"
+              onFocus={(e) => e.target.select()}
+            />
             <button
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(link);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                } catch {}
+                  setCopied("yes");
+                  setTimeout(() => setCopied("no"), 1500);
+                } catch {
+                  // Clipboard blocked (e.g. plain http on a LAN address): select it so Ctrl+C works.
+                  linkRef.current?.focus();
+                  linkRef.current?.select();
+                  setCopied("manual");
+                }
               }}
-              className="rounded border border-gray-300 px-2 text-xs hover:bg-gray-50"
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition-colors ${
+                copied === "yes" ? "bg-emerald-100 text-emerald-800" : "bg-brand-600 text-white hover:bg-brand-700"
+              }`}
             >
-              {copied ? "Copied" : "Copy"}
+              <Icon name={copied === "yes" ? "check" : "copy"} className="h-4 w-4" />
+              {copied === "yes" ? "Copied" : "Copy"}
             </button>
           </div>
-          <button onClick={startOver} className="mt-3 text-xs text-rose-600 hover:underline">
-            Sign out on this device
-          </button>
+          {copied === "manual" && <p className="mt-2 text-xs font-medium text-gray-700">Link selected. Press Ctrl+C (or Cmd+C) to copy it.</p>}
+          <p className="mt-3 flex items-start gap-2 text-xs text-gray-500">
+            <Icon name="alert" className="mt-px h-3.5 w-3.5 text-amber-600" />
+            Keep it private. Anyone with this link can open your profile.
+          </p>
+          <div className="mt-5 border-t border-gray-100 pt-4">
+            <button onClick={startOver} className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50">
+              <Icon name="logout" className="h-4 w-4" />
+              Sign out on this device
+            </button>
+          </div>
         </section>
       </div>
     </div>

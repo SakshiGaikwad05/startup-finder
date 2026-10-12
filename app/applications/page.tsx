@@ -1,7 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { APPLICATION_STATUSES } from "@/lib/types";
+import { useRouter } from "next/navigation";
+import { api, jsonBody } from "@/components/api";
+import { StatusPill } from "@/components/JobCard";
+import { Avatar, Icon } from "@/components/Icon";
+import { Banner, btnPrimary, CardSkeleton, EmptyState, PageHeader } from "@/components/ui";
 
 interface Row {
   id: number;
@@ -17,150 +21,217 @@ interface Row {
   notes: string | null;
 }
 
-function NotesCell({ row, save }: { row: Row; save: (patch: Partial<Row>) => Promise<void> }) {
+/** Stages a student thinks in; each groups one or more stored statuses. */
+const STAGES: { key: string; label: string; statuses: string[] }[] = [
+  { key: "all", label: "All", statuses: [] },
+  { key: "saved", label: "To apply", statuses: ["Saved", "Not Applied"] },
+  { key: "applied", label: "Applied", statuses: ["Applied"] },
+  { key: "interview", label: "Interviewing", statuses: ["Interview"] },
+  { key: "offer", label: "Offers", statuses: ["Offer"] },
+  { key: "closed", label: "Closed", statuses: ["Rejected", "Not Interested"] },
+];
+
+function Notes({ row, save }: { row: Row; save: (patch: Partial<Row>) => Promise<boolean> }) {
   const [v, setV] = useState(row.notes ?? "");
-  const [saved, setSaved] = useState(true);
+  const [state, setState] = useState<"saved" | "dirty" | "saving" | "failed">("saved");
   return (
-    <div className="flex items-center gap-1">
-      <input
+    <div>
+      <label htmlFor={`notes-${row.id}`} className="mb-1 flex items-center justify-between text-xs font-medium text-gray-500">
+        Notes
+        {state !== "saved" && (
+          <span className={`font-normal ${state === "failed" ? "text-rose-700" : "text-gray-400"}`}>
+            {state === "saving" ? "Saving…" : state === "failed" ? "Couldn't save. Click outside the box to retry." : "Not saved yet"}
+          </span>
+        )}
+      </label>
+      <textarea
+        id={`notes-${row.id}`}
+        rows={2}
         value={v}
         onChange={(e) => {
           setV(e.target.value);
-          setSaved(false);
+          setState("dirty");
         }}
         onBlur={async () => {
-          if (!saved) {
-            await save({ notes: v });
-            setSaved(true);
-          }
+          if (state !== "dirty" && state !== "failed") return;
+          setState("saving");
+          setState((await save({ notes: v })) ? "saved" : "failed");
         }}
-        placeholder="e.g. Sent founder cold DM"
-        className="w-full rounded border border-gray-200 px-2 py-1 text-sm"
+        placeholder="e.g. Emailed the founder on Monday, follow up Friday"
+        className="w-full resize-y rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:bg-white focus:outline-none"
       />
-      {!saved && <span className="text-xs text-gray-400">…</span>}
     </div>
   );
 }
 
+function daysSince(date: string) {
+  return Math.floor((Date.now() - new Date(date).getTime()) / 86_400_000);
+}
+
 export default function ApplicationsPage() {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
-  const [filter, setFilter] = useState("all");
-  const load = () =>
-    fetch("/api/applications", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => setRows(d.applications));
+  const [stage, setStage] = useState("all");
+  const load = async () => {
+    const { ok, status, data, error } = await api("/api/applications");
+    if (status === 401) return router.replace("/onboarding");
+    if (!ok) return setError(error);
+    setError(null);
+    setRows(data.applications ?? []);
+  };
   useEffect(() => {
     load();
   }, []);
 
-  async function patch(id: number, p: Partial<Row>) {
-    await fetch(`/api/applications/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) });
-    load();
+  async function patch(id: number, p: Partial<Row>): Promise<boolean> {
+    const { ok, error } = await api(`/api/applications/${id}`, { method: "PATCH", ...jsonBody(p) });
+    if (!ok) setError(error);
+    else load();
+    return ok;
   }
-  async function remove(id: number) {
-    await fetch(`/api/applications/${id}`, { method: "DELETE" });
-    load();
+  async function remove(r: Row) {
+    if (!confirm(`Remove ${r.job_title ?? r.startup_name} from your list?`)) return;
+    const { ok, error } = await api(`/api/applications/${r.id}`, { method: "DELETE" });
+    if (!ok) setError(error);
+    else load();
   }
 
-  const shown = (rows ?? []).filter((r) => filter === "all" || r.status === filter);
-  const counts = Object.fromEntries(APPLICATION_STATUSES.map((s) => [s, (rows ?? []).filter((r) => r.status === s).length]));
+  const inStage = (key: string, r: Row) => key === "all" || STAGES.find((s) => s.key === key)!.statuses.includes(r.status);
+  const shown = (rows ?? []).filter((r) => inStage(stage, r));
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">Application tracker</h1>
-        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded border border-gray-300 bg-white px-2 py-1 text-sm">
-          <option value="all">All ({rows?.length ?? 0})</option>
-          {APPLICATION_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s} ({counts[s]})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-            <tr>
-              <th className="px-3 py-2">Startup</th>
-              <th className="px-3 py-2">Job</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Applied</th>
-              <th className="px-3 py-2">Link</th>
-              <th className="px-3 py-2 w-1/3">Notes</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {rows && shown.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-3 py-10 text-center">
-                  {rows.length === 0 ? (
-                    <>
-                      <div className="text-base font-semibold text-gray-900">Start your shortlist</div>
-                      <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
-                        Save startups you like and track each application here — Saved, Applied, Interview, Offer.
+    <div className="space-y-6">
+      <PageHeader title="Your applications" subtitle="Everything you've saved or applied to, in one place." />
+
+      {error && (
+        <Banner
+          tone="error"
+          action={
+            <button onClick={load} className="rounded-lg bg-white px-3 py-1.5 text-[13px] font-semibold text-gray-900 shadow-sm hover:bg-gray-50">
+              Try again
+            </button>
+          }
+          onDismiss={() => setError(null)}
+        >
+          {error}
+        </Banner>
+      )}
+
+      {!rows && !error && <CardSkeleton count={2} />}
+
+      {rows && rows.length === 0 && (
+        <EmptyState
+          icon="clipboard"
+          title="Nothing saved yet"
+          actions={
+            <Link href="/dashboard" className={btnPrimary}>
+              Browse startups
+            </Link>
+          }
+        >
+          Tap <b className="font-semibold">Save</b> on a startup or job you like. It shows up here so you can track it from &ldquo;To apply&rdquo; all the way to an offer.
+        </EmptyState>
+      )}
+
+      {rows && rows.length > 0 && (
+        <>
+          <div role="group" aria-label="Filter by stage" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+            {STAGES.map((s) => {
+              const n = rows.filter((r) => inStage(s.key, r)).length;
+              const on = stage === s.key;
+              return (
+                <button
+                  key={s.key}
+                  onClick={() => setStage(s.key)}
+                  aria-pressed={on}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${
+                    on ? "bg-gray-900 text-white dark:bg-brand-600" : "bg-white text-gray-700 ring-1 ring-gray-200 hover:ring-gray-400"
+                  }`}
+                >
+                  {s.label}
+                  <span className={`tabular-nums ${on ? "opacity-70" : "text-gray-400"}`}>{n}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {shown.length === 0 ? (
+            <EmptyState
+              icon="inbox"
+              title={`Nothing in ${STAGES.find((s) => s.key === stage)!.label} yet`}
+              actions={
+                <button onClick={() => setStage("all")} className="text-sm font-semibold text-brand-700 hover:underline">
+                  Show everything
+                </button>
+              }
+            />
+          ) : (
+            <ul className="space-y-3">
+              {shown.map((r) => {
+                const link = r.application_url ?? r.job_url ?? r.careers_url;
+                const waiting = r.status === "Applied" && r.applied_at ? daysSince(r.applied_at) : null;
+                return (
+                  <li key={r.id} className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
+                    <div className="flex items-start gap-3">
+                      <Avatar name={r.startup_name} />
+                      <div className="min-w-0 flex-1">
+                        <Link href={`/startups/${r.startup_id}`} className="font-display text-base font-semibold text-gray-900 hover:text-brand-700 hover:underline">
+                          {r.startup_name}
+                        </Link>
+                        <p className="text-sm text-gray-600">{r.job_title ?? "Saved the startup (no specific job)"}</p>
+                      </div>
+                      <StatusPill status={r.status} onChange={(s) => patch(r.id, { status: s })} />
+                    </div>
+
+                    {waiting !== null && waiting >= 7 && (
+                      <p className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
+                        <Icon name="lightbulb" className="mt-0.5 h-4 w-4 text-amber-600" />
+                        Applied {waiting} days ago. A short, polite follow-up email can help you stand out.
                       </p>
-                      <Link href="/dashboard" className="mt-4 inline-block rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
-                        Browse my matches
-                      </Link>
-                    </>
-                  ) : (
-                    <span className="text-sm text-gray-500">
-                      No applications with this status.{" "}
-                      <button onClick={() => setFilter("all")} className="text-indigo-600 hover:underline">
-                        Show all
+                    )}
+
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-gray-600">
+                      {r.status !== "Saved" && r.status !== "Not Applied" && (
+                      <label className="flex items-center gap-2">
+                        <Icon name="calendar" className="h-4 w-4 text-gray-400" />
+                        Applied on
+                        <input
+                          type="date"
+                          value={r.applied_at?.slice(0, 10) ?? ""}
+                          onChange={(e) => patch(r.id, { applied_at: e.target.value || null })}
+                          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[13px] text-gray-900"
+                        />
+                      </label>
+                      )}
+                      {link && (
+                        <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-medium text-brand-700 hover:underline">
+                          {r.job_title ? "Open job posting" : "Open careers page"}
+                          <Icon name="external" className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="mt-3">
+                      <Notes row={r} save={(p) => patch(r.id, p)} />
+                    </div>
+
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={() => remove(r)}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 hover:bg-rose-50 hover:text-rose-700"
+                      >
+                        <Icon name="trash" className="h-3.5 w-3.5" />
+                        Remove
                       </button>
-                    </span>
-                  )}
-                </td>
-              </tr>
-            )}
-            {shown.map((r) => (
-              <tr key={r.id} className="border-t border-gray-100 align-top">
-                <td className="px-3 py-2 font-medium">
-                  <Link href={`/startups/${r.startup_id}`} className="hover:underline">
-                    {r.startup_name}
-                  </Link>
-                </td>
-                <td className="px-3 py-2">{r.job_title ?? <span className="text-gray-400">Startup saved (no specific job)</span>}</td>
-                <td className="px-3 py-2">
-                  <select value={r.status} onChange={(e) => patch(r.id, { status: e.target.value })} className="rounded border border-gray-300 bg-white px-1 py-0.5">
-                    {APPLICATION_STATUSES.map((s) => (
-                      <option key={s}>{s}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="date"
-                    value={r.applied_at?.slice(0, 10) ?? ""}
-                    onChange={(e) => patch(r.id, { applied_at: e.target.value || null })}
-                    className="rounded border border-gray-200 px-1 py-0.5"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  {(r.application_url ?? r.job_url ?? r.careers_url) ? (
-                    <a href={(r.application_url ?? r.job_url ?? r.careers_url)!} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
-                      Open ↗
-                    </a>
-                  ) : (
-                    <span className="text-gray-400">—</span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  <NotesCell row={r} save={(p) => patch(r.id, p)} />
-                </td>
-                <td className="px-3 py-2">
-                  <button onClick={() => remove(r.id)} className="text-xs text-gray-400 hover:text-rose-600">
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      )}
     </div>
   );
 }

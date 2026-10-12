@@ -3,13 +3,48 @@
 /* `dark:` utilities follow the .dark class on <html> (set by the theme toggle / system setting). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ---------------------------------------------------------------------------------------------
+   Design tokens.
+   - gray: warm neutrals (paper-like rather than cold "dashboard" grey).
+   - brand: the one accent colour, used for primary actions, links and selected states.
+   Match colours stay semantic: emerald = great match, amber = good match.
+   --------------------------------------------------------------------------------------------- */
+@theme {
+  --color-gray-50: #fafaf8;
+  --color-gray-100: #f3f2ef;
+  --color-gray-200: #e6e4df;
+  --color-gray-300: #d4d1ca;
+  --color-gray-400: #a5a199;
+  --color-gray-500: #78746c;
+  --color-gray-600: #57534c;
+  --color-gray-700: #423f39;
+  --color-gray-800: #2a2824;
+  --color-gray-900: #1b1a17;
+
+  --color-brand-50: #eef5ff;
+  --color-brand-100: #dbe9ff;
+  --color-brand-200: #bfd7ff;
+  --color-brand-300: #93bcfd;
+  --color-brand-400: #5f97f8;
+  --color-brand-500: #3a77f0;
+  --color-brand-600: #225ddc;
+  --color-brand-700: #1c4bb5;
+  --color-brand-800: #1c3f8f;
+  --color-brand-900: #1b366f;
+}
+
+@theme inline {
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-heading), var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}
+
 :root {
   color-scheme: light;
 }
 
-/* Tailwind v4 dropped the pointer cursor on buttons; restore it for everything clickable.
-   In the base layer so utilities like cursor-not-allowed still win. */
 @layer base {
+  /* Tailwind v4 dropped the pointer cursor on buttons; restore it for everything clickable.
+     In the base layer so utilities like cursor-not-allowed still win. */
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
   select:not(:disabled),
@@ -25,13 +60,34 @@
   select:disabled {
     cursor: not-allowed;
   }
+
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+
+  /* Visible keyboard focus everywhere, never on mouse click. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline-offset: 0;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
 }
 
 /* Slim scrollbar for scrollable panels (filters). Uses the gray palette, so it follows the theme. */
 .scroll-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--color-gray-300) transparent;
-  scrollbar-gutter: stable;
 }
 .scroll-thin::-webkit-scrollbar {
   width: 8px;
@@ -46,79 +102,90 @@
   background-color: var(--color-gray-400);
 }
 
+/* Bottom sheet (phone filters). */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.sheet-up {
+  animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet-up {
+    animation: none;
+  }
+}
+
 body {
-  background: #f6f7f9;
-  color: #111827;
+  background: #f6f5f1;
+  color: var(--color-gray-900);
 }
 
 /* ---------------------------------------------------------------------------------------------
    Dark theme.
-   Components use Tailwind's gray scale for surfaces/text/borders and 50–200 tints for soft
-   badges, so dark mode remaps those palette variables once instead of touching every component:
-   grays are inverted, light tints become deep tints, and dark accent text becomes light.
+   Components use the gray scale for surfaces/text/borders and 50–200 tints for soft badges, so
+   dark mode remaps those palette variables once instead of touching every component: grays are
+   inverted, light tints become deep tints, and dark accent text becomes light.
    (Unlayered rules win over Tailwind's utility layer.)
    --------------------------------------------------------------------------------------------- */
 html.dark {
   color-scheme: dark;
 
-  --color-gray-50: #171b23;
-  --color-gray-100: #1e232d;
-  --color-gray-200: #2b313d;
-  --color-gray-300: #3b4252;
-  --color-gray-400: #6b7385;
-  --color-gray-500: #9199a9;
-  --color-gray-600: #aeb5c2;
-  --color-gray-700: #c8cdd7;
-  --color-gray-800: #dde1e8;
-  --color-gray-900: #f1f3f6;
+  --color-gray-50: #1d1c1a;
+  --color-gray-100: #252421;
+  --color-gray-200: #33312d;
+  --color-gray-300: #46433e;
+  --color-gray-400: #6f6b64;
+  --color-gray-500: #9a958c;
+  --color-gray-600: #b6b1a8;
+  --color-gray-700: #cfcac2;
+  --color-gray-800: #e3dfd9;
+  --color-gray-900: #f4f2ee;
 
-  --color-indigo-50: #1c1f3d;
-  --color-indigo-100: #262a59;
-  --color-indigo-200: #363c7e;
-  --color-emerald-50: #0f2a21;
-  --color-emerald-100: #12382b;
-  --color-emerald-200: #1b4e3c;
+  --color-brand-50: #16233d;
+  --color-brand-100: #1b2d52;
+  --color-brand-200: #233c6d;
+  --color-brand-300: #2f5294;
+  --color-emerald-50: #10261e;
+  --color-emerald-100: #13342a;
+  --color-emerald-200: #1b4a3b;
   --color-emerald-300: #23664e;
-  --color-amber-50: #2c230f;
-  --color-amber-100: #3b2f12;
-  --color-amber-200: #5a4616;
-  --color-rose-50: #331b20;
-  --color-rose-100: #43212a;
-  --color-rose-200: #5d2b38;
-  --color-violet-50: #251c3d;
-  --color-sky-50: #10273b;
+  --color-amber-50: #2a210f;
+  --color-amber-100: #382c12;
+  --color-amber-200: #574416;
+  --color-rose-50: #301a1e;
+  --color-rose-100: #3f2027;
+  --color-rose-200: #5a2935;
+  --color-violet-100: #2a2145;
+  --color-sky-100: #12293d;
 }
 
 html.dark body {
-  background: #0c0e13;
-  color: #e5e7eb;
+  background: #131210;
+  color: var(--color-gray-900);
 }
 
 /* Cards and bars: white → dark surface. */
 html.dark .bg-white {
-  background-color: #12151c;
+  background-color: #1a1917;
 }
-html.dark .bg-white\/95 {
-  background-color: rgb(18 21 28 / 0.95);
-}
-html.dark .bg-white\/80 {
-  background-color: rgb(30 35 45 / 0.8);
-}
-
-/* Solid "dark" buttons (bg-gray-900 + white text) would turn light with the inverted grays. */
-html.dark .bg-gray-900 {
-  background-color: #4f46e5;
+html.dark .bg-white\/90 {
+  background-color: rgb(26 25 23 / 0.9);
 }
 
 /* Accent text that's too dark on a dark background → light shade of the same hue. */
-html.dark .text-indigo-600,
-html.dark .text-indigo-700,
-html.dark .text-indigo-800,
-html.dark .text-indigo-900,
-html.dark .hover\:text-indigo-700:hover,
-html.dark .hover\:text-indigo-800:hover {
-  color: #a5b4fc;
+html.dark .text-brand-600,
+html.dark .text-brand-700,
+html.dark .text-brand-800,
+html.dark .hover\:text-brand-700:hover,
+html.dark .hover\:text-brand-800:hover {
+  color: #9cc0ff;
 }
+html.dark .text-emerald-600,
 html.dark .text-emerald-700,
 html.dark .text-emerald-800 {
   color: #6ee7b7;

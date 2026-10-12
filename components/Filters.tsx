@@ -4,6 +4,7 @@ import { LOCATION_OPTIONS } from "@/lib/types";
 import { ROLE_CATEGORIES } from "@/lib/jobs/roles";
 import { STARTUP_TYPE_OPTIONS } from "@/lib/resume/parse";
 import type { CandidateProfile } from "@/lib/types";
+import { Icon } from "./Icon";
 
 /** Default filters for a user: their locations and preferred startup types. */
 export function filtersForProfile(p: CandidateProfile | null | undefined): FilterState {
@@ -112,17 +113,32 @@ export function applyFilters(list: StartupView[], f: FilterState): StartupView[]
   return out.sort(by[f.sort]);
 }
 
+const FUNDING_OPTIONS = [
+  ["funded_30", "Last 30 days"],
+  ["funded_90", "Last 3 months"],
+  ["funded_180", "Last 6 months"],
+] as const;
+
+const AGE_OPTIONS = [
+  ["new", "New (2024+)"],
+  ["early", "Early stage"],
+  ["growing", "Growing"],
+  ["established", "Established"],
+] as const;
+
 /** Toggle pill — easier to scan than a column of checkboxes. */
 function Pill({ label, on, onClick, title }: { label: string; on: boolean; onClick: () => void; title?: string }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       title={title}
       aria-pressed={on}
-      className={`rounded-full border px-2.5 py-1 text-xs transition ${
-        on ? "border-indigo-600 bg-indigo-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-gray-400"
+      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[13px] transition-colors ${
+        on ? "border-brand-600 bg-brand-600 font-medium text-white" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
       }`}
     >
+      {on && <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.5} />}
       {label}
     </button>
   );
@@ -130,12 +146,16 @@ function Pill({ label, on, onClick, title }: { label: string; on: boolean; onCli
 
 function Switch({ label, on, onChange, hint }: { label: string; on: boolean; onChange: (v: boolean) => void; hint?: string }) {
   return (
-    <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-700">
-      <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 accent-indigo-600" />
-      <span>
+    <label className="flex items-start justify-between gap-3">
+      <span className="text-sm text-gray-800">
         {label}
-        {hint && <span className="block text-[11px] text-gray-400">{hint}</span>}
+        {hint && <span className="block text-xs text-gray-500">{hint}</span>}
       </span>
+      <input type="checkbox" role="switch" checked={on} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
+      <span
+        aria-hidden="true"
+        className="relative mt-0.5 h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-brand-600 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand-500 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"
+      />
     </label>
   );
 }
@@ -143,16 +163,16 @@ function Switch({ label, on, onChange, hint }: { label: string; on: boolean; onC
 function Group({ title, children, hint, defaultOpen = true, active = 0 }: { title: string; children: React.ReactNode; hint?: string; defaultOpen?: boolean; active?: number }) {
   return (
     // A group with an active filter is always shown open, so you can see what's filtering the list.
-    <details open={defaultOpen || active > 0} className="group border-t border-gray-100 pt-3 first:border-t-0 first:pt-0">
-      <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
-        <span>
+    <details open={defaultOpen || active > 0} className="group border-t border-gray-200 py-4 first:border-t-0 first:pt-0">
+      <summary className="flex list-none items-center justify-between gap-2 rounded-md text-sm font-semibold text-gray-900">
+        <span className="flex items-center gap-2">
           {title}
-          {active > 0 && <span className="ml-1.5 rounded-full bg-indigo-100 px-1.5 text-[10px] text-indigo-700">{active}</span>}
+          {active > 0 && <span className="rounded-full bg-brand-100 px-1.5 text-[11px] font-semibold tabular-nums text-brand-700">{active}</span>}
         </span>
-        <span className="text-gray-300 transition group-open:rotate-180">▾</span>
+        <Icon name="chevron-down" className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
       </summary>
-      {hint && <p className="mt-1 text-[11px] text-gray-400">{hint}</p>}
-      <div className="mt-2">{children}</div>
+      {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
+      <div className="mt-3">{children}</div>
     </details>
   );
 }
@@ -161,22 +181,50 @@ function toggle(list: string[], v: string) {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
 }
 
+/** The filters currently narrowing the list, each with a one-click remove. Shown above the results. */
+export function activeFilterChips(f: FilterState, set: (f: FilterState) => void): { key: string; label: string; remove: () => void }[] {
+  const chips: { key: string; label: string; remove: () => void }[] = [];
+  for (const r of f.roles ?? []) chips.push({ key: `r:${r}`, label: r, remove: () => set({ ...f, roles: (f.roles ?? []).filter((x) => x !== r) }) });
+  for (const l of f.levels ?? []) {
+    const label = EXPERIENCE_LEVELS.find(([k]) => k === l)?.[1] ?? l;
+    chips.push({ key: `e:${l}`, label, remove: () => set({ ...f, levels: (f.levels ?? []).filter((x) => x !== l) }) });
+  }
+  for (const l of f.locations) chips.push({ key: `l:${l}`, label: l, remove: () => set({ ...f, locations: f.locations.filter((x) => x !== l) }) });
+  for (const t of f.types ?? []) chips.push({ key: `t:${t}`, label: t, remove: () => set({ ...f, types: (f.types ?? []).filter((x) => x !== t) }) });
+  for (const k of f.funding) {
+    const label = FUNDING_OPTIONS.find(([x]) => x === k)?.[1] ?? k;
+    chips.push({ key: `f:${k}`, label: `Funded: ${label.toLowerCase()}`, remove: () => set({ ...f, funding: f.funding.filter((x) => x !== k) }) });
+  }
+  for (const a of f.age) chips.push({ key: `a:${a}`, label: AGE_OPTIONS.find(([x]) => x === a)?.[1] ?? a, remove: () => set({ ...f, age: f.age.filter((x) => x !== a) }) });
+  for (const r of f.relevance ?? [])
+    chips.push({ key: `m:${r}`, label: r === "strong" ? "Great matches" : "Good matches", remove: () => set({ ...f, relevance: (f.relevance ?? []).filter((x) => x !== r) }) });
+  if (f.hiringOnly) chips.push({ key: "hiring", label: "Hiring now", remove: () => set({ ...f, hiringOnly: false }) });
+  if (f.matchingOnly) chips.push({ key: "fits", label: "Has a job that fits me", remove: () => set({ ...f, matchingOnly: false }) });
+  if (f.emailOnly) chips.push({ key: "email", label: "Has an email", remove: () => set({ ...f, emailOnly: false }) });
+  if (f.search) chips.push({ key: "q", label: `“${f.search}”`, remove: () => set({ ...f, search: "" }) });
+  return chips;
+}
+
 export function Filters({ f, set, defaults = DEFAULT_FILTERS }: { f: FilterState; set: (f: FilterState) => void; defaults?: FilterState }) {
   const roles = f.roles ?? [];
   const levels = f.levels ?? [];
-  const aiActive = [f.ai.ai, f.ai.nonAi, f.ai.unknown].filter((x) => !x).length;
+  const types = f.types ?? [];
   return (
-    // Scrolls on its own when taller than the screen, so every group stays reachable.
-    <aside className="scroll-thin max-h-[70vh] space-y-3 overflow-y-auto overscroll-contain rounded-xl border border-gray-200 bg-white p-4 text-sm lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)]">
-      <input
-        value={f.search}
-        onChange={(e) => set({ ...f, search: e.target.value })}
-        placeholder="🔍 Search startup or job title"
-        className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
-      />
+    <div className="text-sm">
+      <Group
+        title="Experience needed"
+        hint={levels.length ? "Only jobs at these levels are shown" : "Pick Fresher to see entry-level jobs only"}
+        active={levels.length}
+      >
+        <div className="flex flex-wrap gap-2">
+          {EXPERIENCE_LEVELS.map(([k, l, hint]) => (
+            <Pill key={k} label={l} title={hint} on={levels.includes(k)} onClick={() => set({ ...f, levels: toggle(levels, k) })} />
+          ))}
+        </div>
+      </Group>
 
-      <Group title="Job role" hint={roles.length ? "Cards show only jobs in these roles" : "Pick roles to focus on, or leave empty for all"} active={roles.length}>
-        <div className="flex flex-wrap gap-1.5">
+      <Group title="Job role" hint={roles.length ? "Only jobs in these roles are shown" : "Leave empty to see every role"} active={roles.length}>
+        <div className="flex flex-wrap gap-2">
           {ROLE_CATEGORIES.map((r) => (
             <Pill key={r} label={r} on={roles.includes(r)} onClick={() => set({ ...f, roles: toggle(roles, r) })} />
           ))}
@@ -184,12 +232,8 @@ export function Filters({ f, set, defaults = DEFAULT_FILTERS }: { f: FilterState
       </Group>
 
       <Group title="Recently funded" active={f.funding.length} hint={f.funding.length ? "Startups that raised money in this period" : "Any funding date"}>
-        <div className="flex flex-wrap gap-1.5">
-          {[
-            ["funded_30", "Last 30 days"],
-            ["funded_90", "Last 3 months"],
-            ["funded_180", "Last 6 months"],
-          ].map(([k, l]) => (
+        <div className="flex flex-wrap gap-2">
+          {FUNDING_OPTIONS.map(([k, l]) => (
             // One period at a time ("3 months" already includes "30 days").
             // Funding spans months, so picking a period looks at all startups, not just today's changes.
             // News-found startups usually have no jobs listed yet, so "Hiring now" is turned off too.
@@ -204,20 +248,9 @@ export function Filters({ f, set, defaults = DEFAULT_FILTERS }: { f: FilterState
         </div>
       </Group>
 
-      <Group
-        title="Experience"
-        hint={levels.length ? "Cards show only jobs at these levels" : "Pick Fresher to see entry-level jobs only"}
-        active={levels.length}
-      >
-        <div className="flex flex-wrap gap-1.5">
-          {EXPERIENCE_LEVELS.map(([k, l, hint]) => (
-            <Pill key={k} label={l} title={hint} on={levels.includes(k)} onClick={() => set({ ...f, levels: toggle(levels, k) })} />
-          ))}
-        </div>
-      </Group>
-
       <Group title="Location" active={f.locations.length}>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2">
+          <Pill label="Anywhere" on={f.locations.length === 0} onClick={() => set({ ...f, locations: [] })} />
           {LOCATION_OPTIONS.map((l) => (
             <Pill
               key={l}
@@ -227,13 +260,12 @@ export function Filters({ f, set, defaults = DEFAULT_FILTERS }: { f: FilterState
               title={l === "Remote" ? "Remote jobs not restricted to another country" : l === "Remote - India" ? "Remote jobs explicitly open to India" : undefined}
             />
           ))}
-          <Pill label="Anywhere" on={f.locations.length === 0} onClick={() => set({ ...f, locations: [] })} />
         </div>
       </Group>
 
       <Group title="Show only" active={[f.hiringOnly, f.matchingOnly, f.emailOnly].filter(Boolean).length + (f.relevance ?? []).length}>
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
             {[
               ["strong", "Great matches"],
               ["potential", "Good matches"],
@@ -242,36 +274,36 @@ export function Filters({ f, set, defaults = DEFAULT_FILTERS }: { f: FilterState
             ))}
           </div>
           <Switch label="Hiring now" hint="Has at least one open job" on={f.hiringOnly} onChange={(v) => set({ ...f, hiringOnly: v })} />
-          <Switch label="Has a job that fits me" hint="Great or good match" on={f.matchingOnly} onChange={(v) => set({ ...f, matchingOnly: v })} />
+          <Switch label="Has a job that fits me" hint="A great or good match" on={f.matchingOnly} onChange={(v) => set({ ...f, matchingOnly: v })} />
           <Switch label="Has a contact email" hint="Published on their website" on={!!f.emailOnly} onChange={(v) => set({ ...f, emailOnly: v })} />
         </div>
       </Group>
 
-      <Group title="Startup type" active={(f.types ?? []).length + aiActive} hint={(f.types ?? []).length ? undefined : "Any type"}>
-        <div className="flex flex-wrap gap-1.5">
+      <Group title="Kind of startup" active={types.length} defaultOpen={types.length > 0}>
+        <div className="flex flex-wrap gap-2">
+          <Pill label="Any" on={!types.length} onClick={() => set({ ...f, types: [] })} />
           {STARTUP_TYPE_OPTIONS.map((t) => (
-            <Pill key={t} label={t} on={(f.types ?? []).includes(t)} onClick={() => set({ ...f, types: toggle(f.types ?? [], t) })} />
+            <Pill key={t} label={t} on={types.includes(t)} onClick={() => set({ ...f, types: toggle(types, t) })} />
           ))}
-          <Pill label="Any" on={!(f.types ?? []).length} onClick={() => set({ ...f, types: [] })} />
         </div>
       </Group>
 
-      <Group title="Startup age" active={f.age.length} defaultOpen={false}>
-        <div className="flex flex-wrap gap-1.5">
-          {[
-            ["new", "New (2024+)"],
-            ["early", "Early stage"],
-            ["growing", "Growing"],
-            ["established", "Established"],
-          ].map(([k, l]) => (
+      <Group title="Startup age" active={f.age.length} defaultOpen={f.age.length > 0}>
+        <div className="flex flex-wrap gap-2">
+          {AGE_OPTIONS.map(([k, l]) => (
             <Pill key={k} label={l} on={f.age.includes(k)} onClick={() => set({ ...f, age: toggle(f.age, k) })} />
           ))}
         </div>
       </Group>
 
-      <button className="w-full rounded-lg border border-gray-200 py-1.5 text-xs text-gray-500 hover:bg-gray-50" onClick={() => set(defaults)}>
-        Reset all filters
+      <button
+        type="button"
+        className="mt-1 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+        onClick={() => set({ ...defaults, view: f.view, sort: f.sort })}
+      >
+        <Icon name="refresh" className="h-3.5 w-3.5" />
+        Reset to my defaults
       </button>
-    </aside>
+    </div>
   );
 }

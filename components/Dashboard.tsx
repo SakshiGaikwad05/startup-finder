@@ -2,10 +2,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StartupView } from "@/lib/types";
 import { useRouter, useSearchParams } from "next/navigation";
-import { applyFilters, DEFAULT_FILTERS, Filters, filtersForProfile, type FilterState } from "./Filters";
+import { activeFilterChips, applyFilters, DEFAULT_FILTERS, Filters, filtersForProfile, type FilterState } from "./Filters";
 import { StartupCard } from "./StartupCard";
-import { Summary, type SummaryPick } from "./Summary";
 import { GettingStarted } from "./GettingStarted";
+import { Summary, type SummaryPick } from "./Summary";
+import { Icon, type IconName } from "./Icon";
+import { api } from "./api";
+import { Banner, btnPrimary, btnSecondary, CardSkeleton, EmptyState } from "./ui";
 
 interface RunState {
   running: boolean;
@@ -15,6 +18,25 @@ interface RunState {
 }
 
 const FILTER_KEY = "dsf.filters.v1";
+
+const SORTS: [FilterState["sort"], string][] = [
+  ["match", "Best match for me"],
+  ["relevant_jobs", "Most jobs that fit me"],
+  ["discovered", "Newest found"],
+  ["funding", "Most recently funded"],
+  ["founded", "Youngest startups"],
+];
+
+const HOW_IT_WORKS: [IconName, string, string][] = [
+  ["search", "We find startups", "From Y Combinator, funding news, job boards and company careers pages."],
+  ["file", "We match them to you", "Every job is scored on role, skills, location and experience."],
+  ["briefcase", "You apply and track", "Open the job, email the team, and keep track under Applications."],
+];
+
+function ago(iso: string) {
+  const min = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  return min < 60 ? `${min} min` : `${Math.round(min / 60)} h`;
+}
 
 export function Dashboard() {
   const router = useRouter();
@@ -28,18 +50,17 @@ export function Dashboard() {
   const [notice, setNotice] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [explorer, setExplorer] = useState(false);
-  const [showFilters, setShowFilters] = useState(false); // phones: filters open on demand
+  const [showFilters, setShowFilters] = useState(false); // phones: filters open in a bottom sheet
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
   const filtersReady = useRef(false);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/startups", { cache: "no-store" });
-    const data = await res.json();
-    if (res.status === 401) {
+    const { ok, status, data, error } = await api("/api/startups");
+    if (status === 401) {
       router.replace("/onboarding");
       return;
     }
-    if (!res.ok) setError(data.error ?? "Failed to load");
+    if (!ok) setError(error);
     else {
       setError(null);
       setStartups(data.startups);
@@ -64,7 +85,8 @@ export function Dashboard() {
   const watchRun = useCallback(() => {
     if (poll.current) return;
     poll.current = setInterval(async () => {
-      const s: RunState = await (await fetch("/api/discover", { cache: "no-store" })).json();
+      const { ok, data: s } = await api<RunState>("/api/discover");
+      if (!ok) return; // a missed poll is fine; try again on the next tick
       setRun(s);
       if (!s.running) {
         clearInterval(poll.current!);
@@ -81,20 +103,30 @@ export function Dashboard() {
       router.replace("/dashboard");
       findToday(true);
     }
-    fetch("/api/discover", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((s: RunState) => {
-        if (s.running) {
-          setRun(s);
-          watchRun();
-        }
-      })
-      .catch(() => {});
+    api<RunState>("/api/discover").then(({ ok, data: s }) => {
+      if (ok && s.running) {
+        setRun(s);
+        watchRun();
+      }
+    });
     return () => {
       if (poll.current) clearInterval(poll.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, watchRun]);
+
+  // Bottom sheet: lock page scroll behind it and close on Escape.
+  useEffect(() => {
+    if (!showFilters) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setShowFilters(false);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [showFilters]);
 
   function setFilters(next: FilterState) {
     setF(next);
@@ -104,28 +136,28 @@ export function Dashboard() {
   }
 
   async function findToday(welcome = false) {
-    const res = await fetch("/api/discover", { method: "POST" });
-    const data = await res.json();
-    if (data.error) {
-      setError(data.error);
+    setNotice(null);
+    const { ok, data, error } = await api("/api/discover", { method: "POST" });
+    if (!ok) {
+      setError(error);
       return;
     }
     if (data.upToDate) {
-      const ago = Math.max(1, Math.round((Date.now() - new Date(data.lastRunAt).getTime()) / 60000));
       setNotice(
         welcome
-          ? `Welcome! Here are startups matched to your profile, from a search ${ago < 60 ? `${ago} min` : `${Math.round(ago / 60)} h`} ago.`
-          : `Already up to date — startups were searched ${ago < 60 ? `${ago} min` : `${Math.round(ago / 60)} h`} ago. Try again later for new ones.`
+          ? `Welcome! Here are startups matched to your profile, from a search ${ago(data.lastRunAt)} ago.`
+          : `You're up to date. We last checked ${ago(data.lastRunAt)} ago, so try again later for new startups.`
       );
       return;
     }
-    if (welcome) setNotice("Welcome! Searching Y Combinator, funding news and careers pages for you — this takes a few minutes.");
+    if (welcome) setNotice("Welcome! We're finding startups for you now.");
     setRun(data);
     watchRun();
   }
 
   const viewList = useMemo(() => (startups ?? []).filter((s) => f.view === "all" || s.is_fresh), [startups, f.view]);
   const shown = useMemo(() => applyFilters(startups ?? [], f), [startups, f]);
+  const chips = activeFilterChips(f, setFilters);
 
   /** Summary tile clicked: show exactly the startups that tile counted (same view, other filters cleared). */
   function pickSummary(p: SummaryPick) {
@@ -179,7 +211,6 @@ export function Dashboard() {
       .sort((a, b) => b.count - a.count)
       .slice(0, 3);
   }, [startups, shown.length, f]);
-  const today = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 
   /** "Show my best match": all startups, best match first, then scroll to the top card. */
   function showBest() {
@@ -196,84 +227,86 @@ export function Dashboard() {
     }, 80);
   }
 
-  const activeFilters =
-    (f.roles ?? []).length + (f.levels ?? []).length + (f.relevance ?? []).length + (f.types ?? []).length + f.funding.length + f.age.length + (f.emailOnly ? 1 : 0) + (f.matchingOnly ? 1 : 0) + (f.search ? 1 : 0);
-
   const lastRunLabel = lastRunAt ? new Date(lastRunAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : null;
   const freshCount = (startups ?? []).filter((s) => s.is_fresh).length;
+  const stale = !!(startups?.length && lastRunAt && new Date(lastRunAt).toDateString() !== new Date().toDateString());
+  const running = !!run?.running;
+  const lastLog = run?.log?.[run.log.length - 1];
+
+  // One status message at a time, most important first.
+  let banner: React.ReactNode = null;
+  if (error)
+    banner = (
+      <Banner
+        tone="error"
+        action={
+          <button onClick={() => load()} className="rounded-lg bg-white px-3 py-1.5 text-[13px] font-semibold text-gray-900 shadow-sm hover:bg-gray-50">
+            Try again
+          </button>
+        }
+        onDismiss={() => setError(null)}
+      >
+        {error}
+      </Banner>
+    );
+  else if (running && startups?.length)
+    banner = (
+      <Banner tone="progress">
+        <b className="font-semibold">Looking for new startups.</b> This takes about 3 minutes. Keep browsing, new results appear here on their own.
+        {lastLog && <span className="mt-0.5 block truncate text-xs text-gray-500">{lastLog}</span>}
+      </Banner>
+    );
+  else if (notice) banner = <Banner onDismiss={() => setNotice(null)}>{notice}</Banner>;
+  else if (stale)
+    banner = (
+      <Banner
+        tone="warn"
+        action={
+          <button onClick={() => findToday()} className="rounded-lg bg-white px-3 py-1.5 text-[13px] font-semibold text-gray-900 shadow-sm hover:bg-gray-50">
+            Check now
+          </button>
+        }
+      >
+        These results are from <b className="font-semibold">{lastRunLabel}</b>. Click <b className="font-semibold">Find Startups Today</b> for fresh ones.
+      </Banner>
+    );
+
+  const filterPanel = <Filters f={f} set={setFilters} defaults={defaults} />;
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl">{name ? `Hi ${name.split(" ")[0]} — startups hiring for you` : "Startups hiring for you"}</h1>
-            <p className="text-sm text-gray-500">
-              {today} · Showing {f.locations.length ? f.locations.join(", ") : "all locations"}
-            </p>
-          </div>
-          <button
-            onClick={() => findToday()}
-            disabled={run?.running}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-70 sm:w-auto"
-          >
-            {run?.running && <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-            {run?.running ? "Finding startups… (~3 min)" : "🔎 Find Startups Today"}
-          </button>
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          {name && <p className="text-sm font-medium text-gray-500">Hi {name.split(" ")[0]},</p>}
+          <h1 className="text-2xl font-bold text-gray-900 sm:text-[28px]">Startups hiring for you</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            {lastRunLabel ? `Last checked ${lastRunLabel}` : "Not checked yet"}
+            {startups && startups.length > 0 && ` · ${startups.length} startups found so far`}
+          </p>
         </div>
-        {/* The explainer is hidden on phones to get to the startups faster. */}
-        <ol className="mt-4 hidden gap-2 text-xs text-gray-600 sm:grid sm:grid-cols-3">
-          <li className="rounded-lg bg-gray-50 px-3 py-2">
-            <b className="text-gray-800">1. Find</b> — pulls hiring startups from Y Combinator, funding news, job boards and company careers pages.
-          </li>
-          <li className="rounded-lg bg-gray-50 px-3 py-2">
-            <b className="text-gray-800">2. Match</b> — scores every job against your resume: role, skills, location, experience.
-          </li>
-          <li className="rounded-lg bg-gray-50 px-3 py-2">
-            <b className="text-gray-800">3. Apply</b> — open the job, email the team, and track it under Applications.
-          </li>
-        </ol>
-      </section>
+        <button onClick={() => findToday()} disabled={running} className={`${btnPrimary} w-full sm:w-auto`}>
+          <Icon name={running ? "spinner" : "refresh"} className="h-4 w-4" />
+          {running ? "Finding startups…" : "Find Startups Today"}
+        </button>
+      </header>
+
+      {banner}
 
       {explorer && (
-        <div className="flex flex-col gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 sm:flex-row sm:items-center sm:justify-between">
-          <span>
-            <b>Exploring recently funded startups.</b> Match scores use general software roles. Add your skills to see jobs that fit you.
-          </span>
-          <button
-            onClick={() => router.push("/onboarding")}
-            className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
-          >
-            Add my skills
-          </button>
-        </div>
-      )}
-
-      {notice && (
-        <div className="flex items-start justify-between gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
-          <span>{notice}</span>
-          <button onClick={() => setNotice(null)} aria-label="Dismiss" className="text-indigo-400 hover:text-indigo-800">
-            ×
-          </button>
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-          <b>Error:</b> {error}
-        </div>
-      )}
-
-      {startups && startups.length > 0 && !run?.running && lastRunAt && new Date(lastRunAt).toDateString() !== new Date().toDateString() && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          Showing results from <b>{lastRunLabel}</b>.<span className="hidden sm:inline"> You haven’t searched today yet — click <b>Find Startups Today</b> for fresh results.</span>
-          <span className="sm:hidden"> Tap Find Startups Today for fresh ones.</span>
-        </div>
+        <Banner
+          action={
+            <button onClick={() => router.push("/onboarding")} className="rounded-lg bg-brand-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-brand-700">
+              Add my skills
+            </button>
+          }
+        >
+          <b className="font-semibold">You&apos;re exploring recently funded startups.</b> Add your skills and we&apos;ll show the jobs that fit you.
+        </Banner>
       )}
 
       {startups && startups.length > 0 && <GettingStarted startups={startups} onShowBest={showBest} />}
 
-      {startups && (
+      {startups && startups.length > 0 && (
         <Summary
           list={viewList}
           label={f.view === "today" ? `Found in the latest search${lastRunLabel ? ` (${lastRunLabel})` : ""}` : "All startups found so far"}
@@ -281,96 +314,198 @@ export function Dashboard() {
         />
       )}
 
-      {/* minmax(0,1fr): without it the single phone column grows to its widest child and the page overflows. */}
-      <div id="results" className="grid scroll-mt-4 grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <div className={showFilters ? "" : "hidden lg:block"}>
-          <Filters f={f} set={setFilters} defaults={defaults} />
-          <button
-            onClick={() => setShowFilters(false)}
-            className="mt-2 w-full rounded-lg bg-gray-900 py-2.5 text-sm font-semibold text-white lg:hidden"
-          >
-            Show {shown.length} startups
-          </button>
-        </div>
-        <div className="min-w-0">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm sm:gap-3">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 lg:hidden"
-              aria-expanded={showFilters}
-            >
-              ⚙ Filters{activeFilters ? ` · ${activeFilters}` : ""}
+      {!startups && !error && <CardSkeleton />}
+
+      {startups && startups.length === 0 && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8">
+          <h3 className="font-display text-xl font-semibold text-gray-900">{running ? "Finding startups for you…" : "Let's find your first startups"}</h3>
+          <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-gray-600">
+            {running
+              ? "This takes about 3 minutes. Results show up here on their own, so you can leave this page open."
+              : "One click checks the latest startups and matches their jobs to your profile."}
+          </p>
+          <ol className="mt-6 grid gap-4 sm:grid-cols-3">
+            {HOW_IT_WORKS.map(([icon, title, body], i) => (
+              <li key={title} className="rounded-xl bg-gray-50 p-4">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-brand-600 shadow-sm">
+                    <Icon name={icon} className="h-4 w-4" />
+                  </span>
+                  <span className="text-xs font-semibold text-gray-400">Step {i + 1}</span>
+                </div>
+                <div className="mt-3 text-sm font-semibold text-gray-900">{title}</div>
+                <p className="mt-1 text-[13px] leading-snug text-gray-600">{body}</p>
+              </li>
+            ))}
+          </ol>
+          {!running && (
+            <button onClick={() => findToday()} className={`${btnPrimary} mt-6`}>
+              <Icon name="search" className="h-4 w-4" />
+              Find startups now
             </button>
-            <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
-              {(
-                [
-                  ["today", `New & updated (${freshCount})`],
-                  ["all", `All startups (${startups?.length ?? 0})`],
-                ] as const
-              ).map(([v, label]) => (
-                <button
-                  key={v}
-                  onClick={() => setFilters({ ...f, view: v })}
-                  className={`rounded-md px-3 py-1.5 text-xs font-medium ${f.view === v ? "bg-gray-900 text-white" : "text-gray-600 hover:text-gray-900"}`}
-                  title={v === "today" ? "Startups that are new, or have new jobs / funding, in the latest search" : "Everything found so far"}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <span className="text-gray-500">
-              <b className="text-gray-800">{shown.length}</b> match your filters
-            </span>
-            <label className="flex items-center gap-2 text-gray-600">
-              Sort
-              <select value={f.sort} onChange={(e) => setFilters({ ...f, sort: e.target.value as FilterState["sort"] })} className="rounded-lg border border-gray-200 bg-white px-2 py-1">
-                <option value="match">Best profile match</option>
-                <option value="discovered">Newest discovery</option>
-                <option value="funding">Newest funding</option>
-                <option value="founded">Recently founded</option>
-                <option value="relevant_jobs">Most relevant jobs</option>
-              </select>
-            </label>
-          </div>
-          {!startups && !error && <div className="text-sm text-gray-500">Loading…</div>}
-          {startups && startups.length === 0 && (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center">
-              <h3 className="text-base font-semibold text-gray-900">{run?.running ? "Finding startups for you…" : "Find your first startups"}</h3>
-              <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
-                {run?.running
-                  ? "We're checking Y Combinator, funding news and careers pages. This takes about 3 minutes — results appear here automatically."
-                  : "Search Y Combinator, funding news and careers pages for startups hiring people with your skills."}
-              </p>
-              {!run?.running && (
-                <button onClick={() => findToday()} className="mt-4 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
-                  🔎 Find startups now
-                </button>
-              )}
-            </div>
           )}
-          {startups && startups.length > 0 && shown.length === 0 && (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
-              No startups match all of these filters together.
-              {loosen.length > 0 && <div className="mt-1 text-xs text-gray-400">Try loosening one:</div>}
-              <div className="mt-3 flex flex-col items-center gap-2">
-                {loosen.map((o) => (
-                  <button key={o.label} className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-indigo-700 hover:bg-indigo-100" onClick={() => setFilters(o.next)}>
-                    {o.label} <b>({o.count})</b>
+        </div>
+      )}
+
+      {/* minmax(0,1fr): without it the single phone column grows to its widest child and the page overflows. */}
+      {startups && startups.length > 0 && (
+        <div id="results" className="grid scroll-mt-20 grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[264px_minmax(0,1fr)]">
+          <aside aria-label="Filters" className="hidden lg:block">
+            <div className="scroll-thin sticky top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto overscroll-contain pr-2">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900">Filters</h2>
+              {filterPanel}
+            </div>
+          </aside>
+
+          <section aria-label="Startups" className="min-w-0 space-y-4">
+            <div className="flex gap-2">
+              <label className="relative min-w-0 flex-1">
+                <span className="sr-only">Search startups and job titles</span>
+                <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="search"
+                  value={f.search}
+                  onChange={(e) => setFilters({ ...f, search: e.target.value })}
+                  placeholder="Search startups or jobs"
+                  className="w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-10 pr-3.5 text-sm placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-3 focus:ring-brand-100"
+                />
+              </label>
+              <button
+                onClick={() => setShowFilters(true)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-300 bg-white px-3.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 lg:hidden"
+                aria-haspopup="dialog"
+              >
+                <Icon name="sliders" className="h-4 w-4" />
+                Filters
+                {chips.length > 0 && <span className="rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold tabular-nums text-white">{chips.length}</span>}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div role="group" aria-label="Which startups" className="inline-flex rounded-xl bg-gray-200/70 p-1">
+                {(
+                  [
+                    ["today", "New & updated", freshCount, "Startups that are new, or have new jobs or funding, in the latest check"],
+                    ["all", "All", startups?.length ?? 0, "Everything found so far"],
+                  ] as const
+                ).map(([v, label, n, hint]) => (
+                  <button
+                    key={v}
+                    onClick={() => setFilters({ ...f, view: v })}
+                    aria-pressed={f.view === v}
+                    title={hint}
+                    className={`rounded-lg px-3 py-1.5 text-[13px] font-semibold transition-colors ${
+                      f.view === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    {label} <span className="font-medium tabular-nums text-gray-500">{n}</span>
                   </button>
                 ))}
-                <button className="rounded-lg border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50" onClick={() => setFilters(defaults)}>
-                  Reset filters
+              </div>
+              <label className="flex items-center gap-2 text-[13px] text-gray-600">
+                Sort by
+                <span className="relative">
+                  <select
+                    value={f.sort}
+                    onChange={(e) => setFilters({ ...f, sort: e.target.value as FilterState["sort"] })}
+                    className="appearance-none rounded-lg border border-gray-300 bg-white py-1.5 pl-3 pr-8 text-[13px] font-medium text-gray-900 focus:border-brand-500 focus:outline-none"
+                  >
+                    {SORTS.map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                  <Icon name="chevron-down" className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500" />
+                </span>
+              </label>
+            </div>
+
+            {chips.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {chips.map((c) => (
+                  <button
+                    key={c.key}
+                    onClick={c.remove}
+                    className="inline-flex items-center gap-1 rounded-full bg-white py-1 pl-2.5 pr-1.5 text-xs font-medium text-gray-700 ring-1 ring-gray-200 hover:ring-gray-400"
+                    aria-label={`Remove filter: ${c.label}`}
+                  >
+                    {c.label}
+                    <Icon name="x" className="h-3 w-3 text-gray-400" />
+                  </button>
+                ))}
+                <button
+                  onClick={() => setFilters({ ...DEFAULT_FILTERS, locations: [], hiringOnly: false, view: f.view, sort: f.sort })}
+                  className="px-1.5 py-1 text-xs font-semibold text-brand-700 hover:underline"
+                >
+                  Clear all
                 </button>
               </div>
+            )}
+
+            {startups && startups.length > 0 && (
+              <p className="text-sm text-gray-600" aria-live="polite">
+                Showing <b className="font-semibold text-gray-900">{shown.length}</b> startup{shown.length === 1 ? "" : "s"}
+              </p>
+            )}
+
+            {startups && startups.length > 0 && shown.length === 0 && (
+              <EmptyState
+                icon="search"
+                title="No startups match all of these filters together"
+                actions={
+                  <div className="flex w-full flex-col items-center gap-2">
+                    {loosen.map((o) => (
+                      <button
+                        key={o.label}
+                        className="inline-flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-100"
+                        onClick={() => setFilters(o.next)}
+                      >
+                        {o.label}
+                        <span className="rounded-full bg-white px-2 text-xs tabular-nums text-brand-700">{o.count}</span>
+                      </button>
+                    ))}
+                    <button className={btnSecondary} onClick={() => setFilters(defaults)}>
+                      Reset filters
+                    </button>
+                  </div>
+                }
+              >
+                {loosen.length > 0 ? "Try loosening one of them:" : "Try removing a filter above."}
+              </EmptyState>
+            )}
+
+            <div className="space-y-4">
+              {shown.map((s) => (
+                <StartupCard key={s.id} s={s} onChanged={load} />
+              ))}
             </div>
-          )}
-          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-2">
-            {shown.map((s) => (
-              <StartupCard key={s.id} s={s} onChanged={load} />
-            ))}
+          </section>
+        </div>
+      )}
+
+      {/* Phone filters: bottom sheet over the results, with a clear "show results" button. */}
+      {showFilters && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-labelledby="filters-title">
+          <button className="absolute inset-0 bg-black/40" aria-label="Close filters" onClick={() => setShowFilters(false)} />
+          <div className="sheet-up absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3.5">
+              <h2 id="filters-title" className="text-lg font-semibold text-gray-900">
+                Filters
+              </h2>
+              <button onClick={() => setShowFilters(false)} className="-mr-2 rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close filters">
+                <Icon name="x" className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="scroll-thin flex-1 overflow-y-auto overscroll-contain px-5 py-4">{filterPanel}</div>
+            <div className="border-t border-gray-200 px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <button onClick={() => setShowFilters(false)} className={`${btnPrimary} w-full`}>
+                Show {shown.length} startup{shown.length === 1 ? "" : "s"}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

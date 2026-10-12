@@ -1,65 +1,59 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Icon } from "./Icon";
 
-export type ThemeMode = "system" | "light" | "dark";
+export type ThemeMode = "light" | "dark";
 export const THEME_KEY = "dsf.theme";
 
-/** Runs in <head> before first paint so the page never flashes the wrong theme. */
-export const themeBootScript = `(function(){try{var m=localStorage.getItem('${THEME_KEY}')||'system';var d=m==='dark'||(m==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})();`;
+/** Runs in <head> before first paint so the page never flashes the wrong theme.
+    No saved choice (or the old "system" value) = follow the device setting. */
+export const themeBootScript = `(function(){try{var m=localStorage.getItem('${THEME_KEY}');var d=m==='dark'||(m!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})();`;
 
-function apply(mode: ThemeMode) {
-  const dark = mode === "dark" || (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", dark);
+function savedChoice(): ThemeMode | null {
+  try {
+    const m = localStorage.getItem(THEME_KEY);
+    return m === "light" || m === "dark" ? m : null;
+  } catch {
+    return null;
+  }
 }
 
-const NEXT: Record<ThemeMode, ThemeMode> = { system: "light", light: "dark", dark: "system" };
-const LABEL: Record<ThemeMode, string> = { system: "System theme", light: "Light theme", dark: "Dark theme" };
-
-/** Cycles System → Light → Dark. "System" follows the device setting, live. */
+/** Light ↔ dark. Until the user picks one, the theme follows the device setting, live. */
 export function ThemeToggle() {
-  const [mode, setMode] = useState<ThemeMode>("system");
-  const [ready, setReady] = useState(false); // don't touch the theme until the saved choice is read
+  const [dark, setDark] = useState(false);
 
   useEffect(() => {
-    let saved: ThemeMode = "system";
-    try {
-      saved = (localStorage.getItem(THEME_KEY) as ThemeMode) || "system";
-    } catch {}
-    setMode(saved);
-    setReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!ready) return;
-    apply(mode);
-    if (mode !== "system") return;
+    setDark(document.documentElement.classList.contains("dark")); // the boot script already applied it
+    if (savedChoice()) return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => apply("system");
+    const onChange = () => {
+      if (savedChoice()) return;
+      document.documentElement.classList.toggle("dark", mq.matches);
+      setDark(mq.matches);
+    };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
-  }, [mode, ready]);
+  }, []);
 
-  function cycle() {
-    const next = NEXT[mode];
-    setMode(next);
+  function toggle() {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle("dark", next);
     try {
-      localStorage.setItem(THEME_KEY, next);
+      localStorage.setItem(THEME_KEY, next ? "dark" : "light");
     } catch {}
   }
 
+  const label = dark ? "Switch to light theme" : "Switch to dark theme";
   return (
     <button
       type="button"
-      onClick={cycle}
-      aria-label={`${LABEL[mode]} — switch to ${LABEL[NEXT[mode]].toLowerCase()}`}
-      title={`${LABEL[mode]} (click to change)`}
-      className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+      onClick={toggle}
+      aria-label={label}
+      title={label}
+      className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
     >
-      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        {mode === "light" && <path d="M12 3v2M12 19v2M5 5l1.4 1.4M17.6 17.6 19 19M3 12h2M19 12h2M5 19l1.4-1.4M17.6 6.4 19 5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" />}
-        {mode === "dark" && <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />}
-        {mode === "system" && <path d="M4 5h16v11H4zM8 20h8M12 16v4" />}
-      </svg>
+      <Icon name={dark ? "sun" : "moon"} className="h-[18px] w-[18px]" strokeWidth={1.9} />
     </button>
   );
 }
