@@ -11,6 +11,14 @@ const DATA = path.join(process.cwd(), ".pgdata");
 const PORT = "5433";
 const cmd = process.argv[2] ?? "start";
 
+if (process.platform === "win32") {
+  const defaultPgBin = "C:\\Program Files\\PostgreSQL\\18\\bin";
+  if (fs.existsSync(defaultPgBin) && !process.env.PATH?.includes(defaultPgBin)) {
+    process.env.PATH = `${defaultPgBin};${process.env.PATH}`;
+  }
+}
+
+
 function run(bin, args, opts = {}) {
   const r = spawnSync(bin, args, { stdio: "inherit", ...opts });
   if (r.error) {

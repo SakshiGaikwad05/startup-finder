@@ -104,6 +104,9 @@ html.dark .bg-white\/95 {
 html.dark .bg-white\/80 {
   background-color: rgb(30 35 45 / 0.8);
 }
+html.dark .bg-white\/50 {
+  background-color: rgb(18 21 28 / 0.5);
+}
 
 /* Solid "dark" buttons (bg-gray-900 + white text) would turn light with the inverted grays. */
 html.dark .bg-gray-900 {

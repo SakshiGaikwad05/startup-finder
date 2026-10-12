@@ -22,14 +22,36 @@ function Pill({ label, on, onClick }: { label: string; on: boolean; onClick: () 
   );
 }
 
-function ChipInput({ id, values, onChange, suggestions, placeholder }: { id?: string; values: string[]; onChange: (v: string[]) => void; suggestions: string[]; placeholder: string }) {
+function ChipInput({
+  id,
+  values,
+  onChange,
+  suggestions,
+  placeholder,
+  maxLength,
+}: {
+  id?: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+  suggestions: string[];
+  placeholder: string;
+  maxLength?: number;
+}) {
   const [text, setText] = useState("");
   const matches = useMemo(
-    () => (text.trim() ? suggestions.filter((s) => s.toLowerCase().includes(text.trim().toLowerCase()) && !values.includes(s)).slice(0, 6) : []),
-    [text, suggestions, values]
+    () =>
+      text.trim()
+        ? suggestions
+            .filter((s) => (!maxLength || s.length <= maxLength) && s.toLowerCase().includes(text.trim().toLowerCase()) && !values.includes(s))
+            .slice(0, 6)
+        : [],
+    [text, suggestions, values, maxLength]
   );
   const add = (v: string) => {
-    const t = v.trim();
+    let t = v.trim();
+    if (maxLength && t.length > maxLength) {
+      t = t.slice(0, maxLength).trim();
+    }
     if (t && !values.some((x) => x.toLowerCase() === t.toLowerCase())) onChange([...values, t]);
     setText("");
   };
@@ -49,6 +71,7 @@ function ChipInput({ id, values, onChange, suggestions, placeholder }: { id?: st
         <input
           id={id}
           value={text}
+          maxLength={maxLength}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === ",") {
@@ -69,7 +92,14 @@ function ChipInput({ id, values, onChange, suggestions, placeholder }: { id?: st
           </div>
         )}
       </div>
-      <p className="mt-1 text-xs text-gray-400">Press Enter to add.</p>
+      <div className="mt-1 flex items-center justify-between text-xs text-gray-400">
+        <span>Press Enter to add.</span>
+        {maxLength ? (
+          <span className={text.length >= maxLength ? "font-medium text-amber-600" : ""}>
+            {text.length}/{maxLength} characters
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -124,7 +154,7 @@ function Onboarding() {
       setUpload({ state: "error", msg: d.error });
       return;
     }
-    setSkills((s) => [...new Set([...s, ...d.skills])]);
+    setSkills((s) => [...new Set([...s, ...d.skills.filter((sk: string) => sk.length <= 20)])]);
     setRoles((r) => [...new Set([...r, ...d.roles])]);
     if (d.locations?.length) setLocations((l) => [...new Set([...l, ...d.locations.filter((x: string) => (LOCATION_OPTIONS as readonly string[]).includes(x))])]);
     if (d.experienceYears != null) setYears(String(d.experienceYears));
@@ -225,9 +255,12 @@ function Onboarding() {
               <span className="h-px flex-1 bg-gray-200" /> or add skills yourself <span className="h-px flex-1 bg-gray-200" />
             </div>
             <div>
-              <h2 className="font-semibold text-gray-900">Your skills</h2>
+              <div className="flex items-baseline justify-between">
+                <h2 className="font-semibold text-gray-900">Your skills</h2>
+                <span className="text-xs text-gray-400">Max 20 characters per skill</span>
+              </div>
               <p className="mb-2 text-sm text-gray-500">Languages, frameworks, tools. Matching only counts what's listed here.</p>
-              <ChipInput id="skills-input" values={skills} onChange={setSkills} suggestions={ALL_SKILLS} placeholder="e.g. Python, React, SQL…" />
+              <ChipInput id="skills-input" values={skills} onChange={setSkills} suggestions={ALL_SKILLS} placeholder="e.g. Python, React, SQL…" maxLength={20} />
             </div>
           </div>
         )}

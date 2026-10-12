@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/lib/users";
 import { loadStartups } from "@/lib/discovery/read";
@@ -7,6 +8,18 @@ import { StartupJobs } from "./StartupJobs";
 import { Emails } from "@/components/Emails";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const user = await currentUser();
+  if (!user) return { title: "Startup Details" };
+  const [s] = await loadStartups(user, { id: Number(id) });
+  if (!s) return { title: "Startup Not Found" };
+  return {
+    title: `${s.name} — Jobs & Company Details`,
+    description: s.description || `View hiring information, funding rounds, and startup details for ${s.name}.`,
+  };
+}
 
 function Field({ label, value, href, source }: { label: string; value: React.ReactNode; href?: string | null; source?: string | null }) {
   const unknown = value === null || value === undefined || value === "";
