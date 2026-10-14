@@ -246,6 +246,8 @@ async function refreshOpenSource(log: (m: string) => void) {
   const runStart = new Date();
   const since = daysAgoDate(settings.ossIssueMaxAgeDays);
   const gh = githubSearcher(log);
+  // Says whether a token is configured (never the token itself), so a missing one is easy to spot.
+  log(`Open source: GitHub token ${process.env.GITHUB_TOKEN ? "set (30 searches/min)" : "not set (10 searches/min)"}.`);
   await refreshYc(gh, since, runStart, log);
   await refreshPopular(gh, since, runStart, log);
   await query("DELETE FROM oss_projects WHERE fetched_at < now() - interval '21 days'");
