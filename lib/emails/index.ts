@@ -2,8 +2,8 @@
 // Nothing is guessed (no "firstname@domain" patterns). "Valid" = the domain has MX records, i.e.
 // it can receive email. We never probe mailboxes over SMTP.
 import { promises as dns } from "node:dns";
-
-export type EmailType = "careers" | "general" | "person";
+import type { EmailType } from "./labels";
+export { emailLabel, emailPriority, type EmailLabel, type EmailType } from "./labels";
 
 export interface FoundEmail {
   email: string;

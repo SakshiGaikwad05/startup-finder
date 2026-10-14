@@ -1,16 +1,24 @@
-// Funding news from public RSS feeds. Only headlines that explicitly announce a raise are used,
-// and the article link is stored as the funding source URL.
-import type { DiscoveryContext, StartupResult, StartupSource } from "@/lib/types";
+// Funding news from public RSS feeds. Only headlines that explicitly announce a raise (or clearly say
+// one is planned / reported) are used, and the article link is stored as the funding source URL.
+// Every feed below was checked: free, no key, and allowed by the site's robots.txt.
+import type { DiscoveryContext, Headquarters, StartupResult, StartupSource } from "@/lib/types";
 import { cachedText } from "@/lib/http";
-import { parseFundingHeadline } from "@/lib/funding";
+import { parseAmount, parseFundingHeadline } from "@/lib/funding";
+import { countryFromLocation } from "@/lib/country";
 import { normalizeName } from "@/lib/deduplication";
 import { stripHtml } from "@/sources/jobs/remotive";
 import { settings } from "@/config/settings";
 
-const FEEDS = [
+/** India-focused outlets first; the outlet's country is never used as the startup's country. */
+export const FEEDS = [
   { name: "Inc42", url: "https://inc42.com/feed/" },
+  { name: "Economic Times (Tech funding)", url: "https://economictimes.indiatimes.com/tech/funding/rssfeeds/78570550.cms" },
+  { name: "Economic Times (Startups)", url: "https://economictimes.indiatimes.com/tech/startups/rssfeeds/78570540.cms" },
+  { name: "Entrackr", url: "https://entrackr.com/rss" },
   { name: "YourStory", url: "https://yourstory.com/feed" },
-  { name: "TechCrunch", url: "https://techcrunch.com/category/startups/feed/" },
+  { name: "TechCrunch (Fundraising)", url: "https://techcrunch.com/category/fundraising/feed/" },
+  { name: "TechCrunch (Startups)", url: "https://techcrunch.com/category/startups/feed/" },
+  { name: "Crunchbase News", url: "https://news.crunchbase.com/feed/" },
 ];
 
 export interface RssItem {
@@ -23,7 +31,8 @@ export interface RssItem {
 function tag(xml: string, name: string): string | null {
   const m = xml.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "i"));
   if (!m) return null;
-  return m[1].replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/, "$1").trim();
+  // Some feeds (ET) put whitespace around the CDATA block, so strip the markers anywhere.
+  return m[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
 }
 
 function decode(s: string) {
@@ -86,15 +95,33 @@ export async function websiteFromArticle(articleUrl: string, company: string): P
   return null;
 }
 
-const NOT_A_RAISE = /\bshares?\b|\bstake\b|bulk deal|\bipo\b|market debut|\bacquires?\b|revenue|net loss|profit|fy\d\d/i;
+// Share sales, results, acquisitions, and VC funds raising money (not startups) are skipped.
+const NOT_A_RAISE =
+  /\bshares?\b|\bstake\b|bulk deal|\bipo\b|market debut|\bacquires?\b|revenue|net loss|profit|fy\d\d|\bcorpus\b|\b(maiden|debut|new|first|second|third|venture|vc|deeptech|growth)\s+fund\b|\bfund\s+(i{1,3}|iv|v|vi|\d)\b|\bfor (its |a |an |the )?[\w ,-]{0,30}\bfund\b/i;
+
+/** Headquarters evidence from the article: "Bengaluru-based Foo" (medium), else an amount in ₹ (low). */
+export function hqFromArticle(locationHint: string | null, amount: string | null, outlet: string, url: string): Headquarters | null {
+  const country = countryFromLocation(locationHint);
+  if (country) {
+    const phrase = /^(India|United States)$/.test(locationHint ?? "")
+      ? `described as ${locationHint === "India" ? "an Indian" : "a US"} company`
+      : `“${locationHint}-based”`;
+    return { country, confidence: "medium", evidence: `${phrase} in ${outlet} headline`, sourceUrl: url };
+  }
+  if (parseAmount(amount)?.currency === "INR") {
+    return { country: "India", confidence: "low", evidence: `Round announced in ₹ (${outlet})`, sourceUrl: url };
+  }
+  return null;
+}
 
 export const fundingSource: StartupSource = {
   id: "funding_rss",
-  name: "Funding news (Inc42, YourStory, TechCrunch)",
+  name: "Funding news (Inc42, ET, Entrackr, YourStory, TechCrunch, Crunchbase News)",
   disabledReason: () => null,
 
   async discover(ctx: DiscoveryContext): Promise<StartupResult[]> {
     const out: StartupResult[] = [];
+    const seenLinks = new Set<string>(); // the two TechCrunch feeds overlap
     for (const feed of FEEDS) {
       let items: RssItem[];
       try {
@@ -105,12 +132,17 @@ export const fundingSource: StartupSource = {
       }
       let found = 0;
       let websites = 0;
+      let unconfirmed = 0;
       for (const item of items) {
+        if (seenLinks.has(item.link)) continue;
+        seenLinks.add(item.link);
         const title = item.title.replace(/^\[[^\]]+\]\s*/, "");
         if (NOT_A_RAISE.test(title)) continue;
         const parsed = parseFundingHeadline(title, item.description);
         if (!parsed) continue;
         found++;
+        if (parsed.kind !== "confirmed") unconfirmed++;
+        // The article's publish date: the closest free signal for when the round was announced.
         const date = item.pubDate && !isNaN(Date.parse(item.pubDate)) ? new Date(item.pubDate).toISOString().slice(0, 10) : null;
         const website = await websiteFromArticle(item.link, parsed.company);
         if (website) websites++;
@@ -128,11 +160,15 @@ export const fundingSource: StartupSource = {
             investors: parsed.investors,
             source: feed.name,
             sourceUrl: item.link,
+            kind: parsed.kind,
           },
+          hq: hqFromArticle(parsed.locationHint, parsed.amount, feed.name, item.link),
           jobs: [],
         });
       }
-      ctx.log(`Funding: ${feed.name} — ${items.length} articles, ${found} funding announcements, ${websites} company websites found in articles.`);
+      ctx.log(
+        `Funding: ${feed.name} — ${items.length} articles, ${found} funding announcements${unconfirmed ? ` (${unconfirmed} planned/unconfirmed)` : ""}, ${websites} company websites found in articles.`
+      );
     }
     return out;
   },

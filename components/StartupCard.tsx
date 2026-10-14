@@ -7,11 +7,10 @@ import { Emails } from "./Emails";
 import { MATCH_LABEL } from "./MatchScore";
 import { Avatar, Icon, type IconName } from "./Icon";
 import { api, jsonBody } from "./api";
-
-export function daysAgo(date: string) {
-  const d = Math.round((Date.now() - new Date(date).getTime()) / 86_400_000);
-  return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
-}
+import { COUNTRY_SHORT } from "@/lib/country";
+import { STAGE_LABELS } from "@/lib/funding";
+import { daysAgo, fundingAmountText, fundingDateText, FundingKindBadge } from "./format";
+import { fundedWithin } from "@/lib/filters";
 
 function Fact({ icon, children, title, strong }: { icon: IconName; children: React.ReactNode; title?: string; strong?: boolean }) {
   return (
@@ -37,7 +36,7 @@ export function StartupCard({ s, onChanged }: { s: StartupView; onChanged: () =>
   const relevant = s.jobs.filter((j) => j.match.relevance === "strong" || j.match.relevance === "potential");
   const others = s.jobs.filter((j) => !relevant.includes(j));
   const saved = s.applications.find((a) => a.job_id === null);
-  const recentlyFunded = ["funded_30", "funded_90", "funded_180"].includes(s.funding_status);
+  const recentlyFunded = fundedWithin(s, 180);
   const careers = s.careers_url ?? s.website ?? s.source_url;
   const first = relevant.length ? relevant.slice(0, 3) : [];
   const topJob = relevant[0];
@@ -79,8 +78,16 @@ export function StartupCard({ s, onChanged }: { s: StartupView; onChanged: () =>
               )}
             </div>
             <p className="mt-0.5 truncate text-[13px] text-gray-500">
-              {meta || "Category unknown"}
-              {s.location ? ` · ${s.location}` : ""}
+              {s.hq_country ? (
+                <span title={s.hq_evidence ?? undefined} className="font-medium text-gray-700">
+                  {COUNTRY_SHORT[s.hq_country]}
+                  {s.hq_confidence === "low" ? " (likely)" : ""}
+                </span>
+              ) : (
+                <span title="No source says where they're headquartered">Country unknown</span>
+              )}
+              {s.location && s.location !== s.hq_country ? ` · HQ ${s.location}` : ""}
+              {` · ${meta || "Category unknown"}`}
             </p>
           </div>
           {relevant.length > 0 && (
@@ -94,17 +101,12 @@ export function StartupCard({ s, onChanged }: { s: StartupView; onChanged: () =>
         {s.description && <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-gray-600">{s.description}</p>}
 
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[13px] text-gray-600">
-          <Fact icon="briefcase" strong={s.jobs.length > 0}>
-            {s.jobs.length ? `${s.jobs.length} open job${s.jobs.length > 1 ? "s" : ""}` : "No open jobs found"}
-          </Fact>
-          {remote && <Fact icon="pin">{remote}</Fact>}
-          {recentlyFunded && (
-            <Fact icon="money" title={s.funding_source ? `Source: ${s.funding_source}` : undefined}>
-              {s.last_funding_amount ? `Raised ${s.last_funding_amount}` : "Funded"}
-              {s.funding_round ? ` ${s.funding_round}` : ""}
-              {s.last_funding_date ? `, ${daysAgo(s.last_funding_date)}` : ""}
+          {s.jobs.length > 0 && (
+            <Fact icon="briefcase" strong title="Read from a job board or their own careers page">
+              {`${s.jobs.length} verified opening${s.jobs.length > 1 ? "s" : ""}`}
             </Fact>
           )}
+          {remote && <Fact icon="pin">{remote}</Fact>}
           {s.is_ai === true && (
             <Fact icon="cpu" title={s.classification_reasons.join("\n")}>
               AI product
@@ -119,7 +121,62 @@ export function StartupCard({ s, onChanged }: { s: StartupView; onChanged: () =>
             </Fact>
           )}
         </div>
+
+        {(s.funding_round || s.last_funding_amount) && (
+          <div className="mt-3 rounded-xl bg-gray-50 px-3 py-2.5 text-[13px] text-gray-700">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Icon name="money" className="h-4 w-4 text-gray-400" />
+              <span className="font-medium text-gray-900">
+                {[s.funding_stage && s.funding_stage !== "other" ? STAGE_LABELS[s.funding_stage] : s.funding_round, fundingAmountText(s)].filter(Boolean).join(" · ") ||
+                  "Funding round"}
+              </span>
+              <FundingKindBadge kind={s.funding_kind} />
+              {s.funding_conflicts.length > 0 && (
+                <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700" title={s.funding_conflicts.join("\n")}>
+                  Sources disagree
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-6 text-xs text-gray-500">
+              <span title={recentlyFunded || s.funding_date_approximate ? undefined : "Older than 6 months"}>
+                {fundingDateText(s)}
+              </span>
+              {s.funding_source_url && (
+                <a href={s.funding_source_url} target="_blank" rel="noreferrer" className="underline hover:text-gray-800">
+                  Source: {s.funding_source ?? "article"}
+                </a>
+              )}
+              {s.funding_verification_url && (
+                <a href={s.funding_verification_url} target="_blank" rel="noreferrer" className="text-emerald-700 underline hover:text-emerald-900" title="A second, independent outlet reported the same round">
+                  Independently confirmed
+                </a>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+
+      {s.jobs.length === 0 && (
+        <div className="border-t border-gray-100 px-4 py-3 text-[13px] text-gray-600 sm:px-5">
+          No verified opening found. Funding doesn&apos;t always mean they&apos;re hiring, so check by hand:{" "}
+          {s.careers_url ? (
+            <a href={s.careers_url} target="_blank" rel="noreferrer" className="font-medium text-brand-700 underline">
+              careers page
+            </a>
+          ) : (
+            <span className="text-gray-500">careers page not publicly available</span>
+          )}
+          {" · "}
+          <a
+            href={`https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(s.name)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-brand-700 underline"
+          >
+            LinkedIn Jobs search
+          </a>
+        </div>
+      )}
 
       {s.jobs.length > 0 && (
         <div className="border-t border-gray-100 px-4 sm:px-5">
@@ -157,11 +214,13 @@ export function StartupCard({ s, onChanged }: { s: StartupView; onChanged: () =>
         </div>
       )}
 
-      {s.emails.length > 0 && (
+      {s.emails.length > 0 ? (
         <div className="border-t border-gray-100 px-4 py-3.5 sm:px-5">
-          <h4 className="mb-2 text-[13px] font-semibold text-gray-500">Contact (from their website)</h4>
+          <h4 className="mb-2 text-[13px] font-semibold text-gray-500">Public contact (from their own website)</h4>
           <Emails emails={s.emails} limit={2} />
         </div>
+      ) : (
+        <p className="border-t border-gray-100 px-4 py-2.5 text-xs text-gray-500 sm:px-5">Public contact email: not publicly available</p>
       )}
 
       <div className="flex flex-wrap items-center gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50 px-4 py-3 sm:px-5">
@@ -183,11 +242,14 @@ export function StartupCard({ s, onChanged }: { s: StartupView; onChanged: () =>
         </button>
         {careers && (
           <a href={careers} target="_blank" rel="noreferrer" className={`${btn} border border-gray-300 bg-white text-gray-800 hover:bg-gray-50`}>
-            {s.careers_url ? "Careers page" : "Website"}
+            {s.careers_url ? "Careers page" : s.website ? "Website" : "Source article"}
             <Icon name="external" className="h-3.5 w-3.5 text-gray-400" />
           </a>
         )}
         <span className="ml-auto flex items-center gap-1">
+          <span className="hidden px-1 text-xs text-gray-400 md:inline" title={`Last verified ${new Date(s.last_verified_at).toLocaleString("en-IN")}`}>
+            Verified {daysAgo(s.last_verified_at)}
+          </span>
           <button
             onClick={toggleShowAgain}
             disabled={busy}

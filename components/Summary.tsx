@@ -1,11 +1,13 @@
 import type { StartupView } from "@/lib/types";
+import { fundedWithin } from "@/lib/filters";
 import { Icon } from "./Icon";
 
 /** Which subset a summary tile stands for; clicking a tile filters the list to it. */
 export type SummaryPick = "all" | "great" | "good" | "jobs" | "ai" | "funded" | "new" | "email";
 
 export const isAiStartup = (s: StartupView) => s.is_ai === true || s.industry === "AI Startup";
-export const isRecentlyFunded = (s: StartupView) => ["funded_30", "funded_90", "funded_180"].includes(s.funding_status);
+// Same rule as the "Recently funded" filter, so clicking the tile shows exactly this many.
+export const isRecentlyFunded = (s: StartupView) => fundedWithin(s, 180);
 
 function Tile({ label, value, hint, tone, onClick }: { label: string; value: number; hint: string; tone?: string; onClick?: () => void }) {
   const clickable = !!onClick && value > 0;

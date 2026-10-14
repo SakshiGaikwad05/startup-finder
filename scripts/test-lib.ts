@@ -14,7 +14,24 @@ import { rateLimit } from "@/lib/rate-limit";
 import { isJobTooOld, jobAgeDays } from "@/lib/jobs/age";
 import { fundedRecentlyEnough } from "@/lib/discovery/store";
 import { careersLink, jobPostingsFromJsonLd } from "@/sources/company";
-import type { CandidateProfile } from "@/lib/types";
+import type { CandidateProfile, StartupView } from "@/lib/types";
+import {
+  announcementKind,
+  consolidateFunding,
+  fundingStage,
+  parseAmount,
+  toUsd,
+  type FundingReport,
+} from "@/lib/funding";
+import { countryFromCode, countryFromLocation } from "@/lib/country";
+import { hqFromArticle, parseRss } from "@/sources/funding";
+import { ycFounders, ycHeadquarters } from "@/sources/yc";
+import { mergeFundingReports, reportFrom } from "@/lib/discovery/store";
+import { hqOf } from "@/lib/discovery/read";
+import { roleType, workArrangement } from "@/lib/jobs/arrangement";
+import { startupCategories } from "@/lib/classification";
+import { emailLabel, emailPriority } from "@/lib/emails";
+import { applyFilters, DEFAULT_FILTERS, fundingWindow, type FilterState } from "@/lib/filters";
 
 const profile: CandidateProfile = JSON.parse(fs.readFileSync("config/candidate_profile.json", "utf8"));
 let passed = 0;
@@ -283,6 +300,239 @@ t("queries come from the profile", () => {
   assert.ok(q.includes("Pune startup hiring Backend Developer"));
   assert.ok(q.some((x) => x.startsWith("remote India")));
   assert.ok(!q.some((x) => /SDET/.test(x)));
+});
+
+console.log("headquarters country");
+t("ISO code at the end wins; Indiana is the US", () => {
+  assert.equal(countryFromLocation("Bengaluru, KA, IN"), "India");
+  assert.equal(countryFromLocation("Indianapolis, IN, US"), "United States");
+  assert.equal(countryFromLocation("San Francisco, CA, USA"), "United States");
+});
+t("cities and plain names", () => {
+  assert.equal(countryFromLocation("Pune"), "India");
+  assert.equal(countryFromLocation("Gurugram"), "India");
+  assert.equal(countryFromLocation("New York"), "United States");
+  assert.equal(countryFromLocation("London"), null);
+  assert.equal(countryFromLocation(null), null);
+});
+t("a place that names both countries is unknown", () => assert.equal(countryFromLocation("San Francisco and Bengaluru"), null));
+t("country codes", () => {
+  assert.equal(countryFromCode("IN"), "India");
+  assert.equal(countryFromCode("us"), "United States");
+  assert.equal(countryFromCode("GB"), null);
+});
+t("headline '-based' is medium confidence; ₹ amount alone is low", () => {
+  assert.deepEqual(hqFromArticle("Bengaluru", "$5 Mn", "Inc42", "u")?.country, "India");
+  assert.equal(hqFromArticle("Bengaluru", "$5 Mn", "Inc42", "u")?.confidence, "medium");
+  const inr = hqFromArticle(null, "₹50 Cr", "ET", "u");
+  assert.equal(inr?.country, "India");
+  assert.equal(inr?.confidence, "low");
+  assert.equal(hqFromArticle(null, "$5M", "TechCrunch", "u"), null); // a US outlet doesn't make it a US startup
+});
+t("investor location in the summary is ignored", () => {
+  const f = parseFundingHeadline("Foo raises $3 Mn in seed round", "The round was led by Mumbai-based VC firm Bar Capital.");
+  assert.equal(f?.company, "Foo");
+  assert.equal(f?.locationHint, null);
+});
+t("company location in the summary is used", () => {
+  const f = parseFundingHeadline("Foo raises $3 Mn in seed round", "Hyderabad-based fintech startup Foo said on Monday it raised…");
+  assert.equal(f?.locationHint, "Hyderabad");
+});
+t("'Indian startup' in the headline", () => assert.equal(parseFundingHeadline("Indian AI startup Foo raises $3 Mn")?.locationHint, "India"));
+t("YC page: HQ from country code, other offices kept separately", () => {
+  const { hq, others } = ycHeadquarters({ location: "Bengaluru, India", country: "IN" }, { all_locations: "Bengaluru, KA, India; San Francisco, CA, USA; Remote" }, "https://yc/x");
+  assert.equal(hq?.country, "India");
+  assert.equal(hq?.confidence, "high");
+  assert.deepEqual(others, ["San Francisco, CA, USA"]);
+});
+t("YC founders with profile links", () => {
+  const f = ycFounders({ founders: [{ full_name: "Ana Rao", title: "CEO", linkedin_url: "https://linkedin.com/in/ana", twitter_url: "" }, { full_name: "" }] }, "https://yc/x");
+  assert.deepEqual(f, [{ name: "Ana Rao", title: "CEO", profile_url: "https://linkedin.com/in/ana", source_url: "https://yc/x" }]);
+});
+t("stored rows without HQ evidence fall back to their HQ location only", () => {
+  assert.equal(hqOf({ location: "Pune, MH, IN", hq_country: null }).hq_country, "India");
+  assert.equal(hqOf({ location: null, hq_country: null }).hq_country, null);
+  assert.equal(hqOf({ location: "Pune", hq_country: "United States", hq_confidence: "high" }).hq_country, "United States");
+});
+
+console.log("funding amounts / stages / kinds");
+t("amounts in crore, lakh, million, billion", () => {
+  assert.deepEqual(parseAmount("₹100 Cr"), { value: 1e9, currency: "INR" });
+  assert.deepEqual(parseAmount("Rs 90 crore"), { value: 9e8, currency: "INR" });
+  assert.deepEqual(parseAmount("$42M"), { value: 42e6, currency: "USD" });
+  assert.deepEqual(parseAmount("$1.2 Bn"), { value: 1.2e9, currency: "USD" });
+  assert.deepEqual(parseAmount("€3 Mn"), { value: 3e6, currency: "EUR" });
+  assert.deepEqual(parseAmount("₹50 lakh"), { value: 5e6, currency: "INR" });
+  assert.equal(parseAmount("10 million")?.currency, null);
+  assert.equal(parseAmount(null), null);
+});
+t("USD conversion only with a rate", () => {
+  assert.equal(toUsd({ value: 9.5e8, currency: "INR" }, { INR: 95 }), 1e7);
+  assert.equal(toUsd({ value: 5e6, currency: "USD" }, null), 5e6);
+  assert.equal(toUsd({ value: 9.5e8, currency: "INR" }, null), null);
+  assert.equal(toUsd({ value: 1e6, currency: null }, { INR: 95 }), null);
+});
+t("stages", () => {
+  assert.equal(fundingStage("Pre-Seed"), "pre_seed");
+  assert.equal(fundingStage("Seed"), "seed");
+  assert.equal(fundingStage("Pre-Series A"), "seed");
+  assert.equal(fundingStage("Series A"), "series_a");
+  assert.equal(fundingStage("Series C"), "series_b_plus");
+  assert.equal(fundingStage("Y Combinator Summer 2026"), "accelerator");
+  assert.equal(fundingStage(null), null);
+});
+t("confirmed / planned / rumored", () => {
+  assert.equal(announcementKind("Foo raises $10M Series A"), "confirmed");
+  assert.equal(announcementKind("Foo in talks to raise $50M"), "planned");
+  assert.equal(announcementKind("Foo eyes $20 Mn in fresh funding"), "planned");
+  assert.equal(announcementKind("Foo reportedly raises $30M at $1B valuation"), "rumored");
+});
+t("planned raises are parsed and labelled, not dropped", () => {
+  const f = parseFundingHeadline("Foo in talks to raise $50 Mn in Series B");
+  assert.equal(f?.company, "Foo");
+  assert.equal(f?.kind, "planned");
+});
+t("cleaner company names (from real feed headlines)", () => {
+  assert.equal(parseFundingHeadline("KL Rahul-backed Boldfit raises Rs 400 Cr in Series B")?.company, "Boldfit");
+  assert.equal(parseFundingHeadline("Toothsi parent MakeO raises Rs 90 crore to expand dental care business")?.company, "MakeO");
+  assert.equal(parseFundingHeadline("Hero Electronix’s Tessolve Semiconductor raises $75 Mn")?.company, "Tessolve Semiconductor");
+});
+t("IPOs and event promos are not startup rounds (from real feed headlines)", () => {
+  assert.equal(parseFundingHeadline("Zetwerk raises Rs 2,830 Cr from anchor investors ahead of IPO"), null);
+  assert.equal(parseFundingHeadline("TechCrunch Disrupt 2026 starts tomorrow: Your final chance to secure up to $100 ticket savings"), null);
+});
+t("ET-style CDATA with spaces is cleaned", () => {
+  const xml = `<rss><item><title> <![CDATA[MakeO raises Rs 90 crore to expand]]> </title><link>https://et/x</link><pubDate>Tue, 13 Oct 2026 15:05:46 +0530</pubDate><description><![CDATA[<p>Dental care</p>]]></description></item></rss>`;
+  const [it] = parseRss(xml);
+  assert.equal(it.title, "MakeO raises Rs 90 crore to expand");
+  assert.equal(it.description, "Dental care");
+});
+
+console.log("funding consolidation");
+const rep = (o: Partial<FundingReport>): FundingReport => ({
+  source: "Inc42", url: "u1", date: "2026-10-01", amount: "$10 Mn", round: "Series A", investors: [], kind: "confirmed",
+  currency: "USD", amount_value: 1e7, amount_usd: 1e7, ...o,
+});
+t("confirmed beats a newer rumor", () => {
+  const c = consolidateFunding([rep({}), rep({ url: "u2", date: "2026-10-10", kind: "rumored", amount: "$50M", amount_usd: 5e7 })]);
+  assert.equal(c.primary?.url, "u1");
+});
+t("earliest confirmed report is the announcement date; second outlet verifies", () => {
+  const c = consolidateFunding([rep({ date: "2026-10-03", source: "ET", url: "u2" }), rep({})]);
+  assert.equal(c.primary?.url, "u2"); // newest report of the round is shown…
+  assert.equal(c.announcement_date, "2026-10-01"); // …but the date is when it was first announced
+  assert.equal(c.verification_url, "u1"); // the other outlet confirms it
+  assert.deepEqual(c.conflicts, []);
+});
+t("same-outlet repeat is not independent verification", () => assert.equal(consolidateFunding([rep({}), rep({ url: "u2", date: "2026-10-02" })]).verification_url, null));
+t("conflicting amounts are flagged", () => {
+  const c = consolidateFunding([rep({}), rep({ source: "ET", url: "u2", date: "2026-10-02", amount: "$15 Mn", amount_usd: 1.5e7 })]);
+  assert.equal(c.conflicts.length, 1);
+  assert.match(c.conflicts[0], /Amount/);
+});
+t("dated news beats an older YC batch", () => {
+  const c = consolidateFunding([rep({ source: "YC directory", url: "yc", date: null, round: "Y Combinator Winter 2025", amount: null, amount_usd: null, currency: null }), rep({ date: "2026-09-20" })]);
+  assert.equal(c.primary?.url, "u1");
+});
+t("report merge: same article refreshed, not duplicated", () => {
+  const a = reportFrom({ date: "2026-10-01", amount: "₹95 Cr", round: "Series A", investors: [], source: "Inc42", sourceUrl: "u1" }, { INR: 95 });
+  assert.equal(a.amount_usd, 1e7);
+  assert.equal(a.kind, "confirmed");
+  const merged = mergeFundingReports([a], { ...a, amount: "₹96 Cr" });
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].amount, "₹96 Cr");
+  assert.equal(mergeFundingReports(merged, { ...a, url: "u2" }).length, 2);
+});
+
+console.log("jobs: role type and work arrangement");
+t("internships", () => {
+  assert.equal(roleType("Software Engineering Intern", null, "fresher"), "internship");
+  assert.equal(roleType("Backend Developer", "Internship", "unknown"), "internship");
+  assert.equal(roleType("Backend Developer", "Full-time", "junior"), "junior");
+  assert.equal(roleType("International Sales Lead", null, "experienced"), "experienced");
+});
+t("work arrangement only from the posting", () => {
+  assert.equal(workArrangement("Remote (IN)", "yes"), "remote");
+  assert.equal(workArrangement("Bengaluru (Hybrid)", "no"), "hybrid");
+  assert.equal(workArrangement("Pune, MH, IN", "no"), "onsite");
+  assert.equal(workArrangement(null, "unknown"), "unknown");
+});
+
+console.log("industry categories");
+t("AI agents, GenAI and SaaS", () => {
+  const c = startupCategories({ industry: "AI Startup", is_ai: true, ai_category: "Generative AI / LLM apps", description: "LLM copilots for enterprises" });
+  assert.ok(c.includes("AI & AI Agents") && c.includes("Generative AI & LLMs") && c.includes("Enterprise Software"), c.join());
+});
+t("robotics and data", () => {
+  assert.ok(startupCategories({ industry: "Other", is_ai: false, ai_category: null, description: "Warehouse robots for retailers" }).includes("Robotics"));
+  assert.ok(startupCategories({ industry: "SaaS", is_ai: false, ai_category: null, description: "Analytics dashboards for D2C brands" }).includes("Data & Analytics"));
+});
+t("nothing matches → Other", () => assert.deepEqual(startupCategories({ industry: "Consumer", is_ai: false, ai_category: null, description: "A dating app" }), ["Other"]));
+
+console.log("email labels");
+t("careers / hiring / general / person", () => {
+  assert.equal(emailLabel({ email: "careers@a.ai", type: "careers" }), "Careers");
+  assert.equal(emailLabel({ email: "recruiting@a.ai", type: "careers" }), "Careers");
+  assert.equal(emailLabel({ email: "hr@a.ai", type: "careers" }), "Hiring");
+  assert.equal(emailLabel({ email: "hello@a.ai", type: "general" }), "General contact");
+  assert.equal(emailLabel({ email: "ana.rao@a.ai", type: "person" }), "Person");
+});
+t("careers emails are listed before general ones", () =>
+  assert.ok(emailPriority({ email: "jobs@a.ai", type: "careers" }) < emailPriority({ email: "hello@a.ai", type: "general" })));
+
+console.log("filters");
+const today = new Date();
+const ago = (d: number) => new Date(today.getTime() - d * 86_400_000).toISOString().slice(0, 10);
+const startup = (o: Partial<StartupView>): StartupView =>
+  ({
+    id: 1, name: "X", industry: "SaaS", is_ai: false, categories: ["SaaS"], location_tags: ["Unknown"], is_fresh: true, jobs: [],
+    relevant_jobs: 0, best_match: 0, relevance: "low", emails: [], age_bucket: "unknown", funding_status: "unknown",
+    last_funding_date: null, funding_kind: null, funding_stage: null, funding_amount_usd: null, hq_country: null,
+    first_discovered_at: today.toISOString(), founded_year: null, ...o,
+  }) as StartupView;
+const anyF: FilterState = { ...DEFAULT_FILTERS, view: "all", locations: [], hiringOnly: false };
+const list = [
+  startup({ id: 1, name: "InA", hq_country: "India", last_funding_date: ago(5), funding_kind: "confirmed", funding_stage: "seed", funding_amount_usd: 2e6 }),
+  startup({ id: 2, name: "UsB", hq_country: "United States", last_funding_date: ago(45), funding_kind: "confirmed", funding_stage: "series_a", funding_amount_usd: 2e7 }),
+  startup({ id: 3, name: "UnkC", hq_country: null, last_funding_date: ago(20), funding_kind: "rumored", funding_stage: "series_b_plus", funding_amount_usd: null }),
+];
+const names = (f: FilterState) => applyFilters(list, f).map((s) => s.name).sort();
+t("country: India / USA / Both / Any (unknown HQ only in Any)", () => {
+  assert.deepEqual(names({ ...anyF, country: "india" }), ["InA"]);
+  assert.deepEqual(names({ ...anyF, country: "usa" }), ["UsB"]);
+  assert.deepEqual(names({ ...anyF, country: "both" }), ["InA", "UsB"]);
+  assert.deepEqual(names({ ...anyF, country: "any" }), ["InA", "UnkC", "UsB"]);
+});
+t("funding recency 7 / 30 / 60 days", () => {
+  assert.deepEqual(names({ ...anyF, fundingDays: 7 }), ["InA"]);
+  assert.deepEqual(names({ ...anyF, fundingDays: 30 }), ["InA", "UnkC"]);
+  assert.deepEqual(names({ ...anyF, fundingDays: 60 }), ["InA", "UnkC", "UsB"]);
+});
+t("an estimated future YC Demo Day is not 'funded in the last 30 days' (bug seen in the UI)", () => {
+  const future = new Date(today.getTime() + 48 * 86_400_000).toISOString().slice(0, 10);
+  assert.deepEqual(applyFilters([startup({ name: "YcFall", last_funding_date: future, funding_date_approximate: true })], { ...anyF, fundingDays: 30 }), []);
+});
+t("filters saved before day windows still work", () => {
+  assert.equal(fundingWindow({ ...anyF, funding: ["funded_90"] }), 90);
+  assert.equal(fundingWindow({ ...anyF, funding: [] }), null);
+});
+t("confirmed only, stage and amount", () => {
+  assert.deepEqual(names({ ...anyF, confirmedOnly: true }), ["InA", "UsB"]);
+  assert.deepEqual(names({ ...anyF, stages: ["series_a", "series_b_plus"] }), ["UnkC", "UsB"]);
+  assert.deepEqual(names({ ...anyF, amounts: ["1to10"] }), ["InA"]); // unknown amounts are hidden
+});
+t("role type and work arrangement keep only matching jobs", () => {
+  const job = (o: any) => ({ job_title: "x", role_categories: ["Backend"], experience_level: "unknown", role_type: "unknown", work_arrangement: "unknown", match: { relevance: "low", match_score: 0 }, ...o });
+  const s = startup({ name: "J", jobs: [job({ role_type: "internship", experience_level: "fresher", work_arrangement: "remote" }), job({ role_type: "experienced", experience_level: "experienced", work_arrangement: "onsite" })] as any });
+  const out = applyFilters([s], { ...anyF, levels: ["internship"] });
+  assert.equal(out[0].jobs.length, 1);
+  assert.equal(applyFilters([s], { ...anyF, levels: ["fresher"] })[0].jobs.length, 1); // interns still count as fresher
+  assert.equal(applyFilters([s], { ...anyF, arrangements: ["hybrid"] }).length, 0);
+});
+t("industry: profile 'AI' and new categories", () => {
+  const ai = startup({ name: "AI", industry: "AI Startup", categories: ["AI & AI Agents"], is_ai: true });
+  assert.equal(applyFilters([ai, list[0]], { ...anyF, types: ["AI"] }).length, 1);
+  assert.equal(applyFilters([ai, list[0]], { ...anyF, types: ["SaaS"] })[0].name, "InA");
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ", some FAILED" : ""}`);

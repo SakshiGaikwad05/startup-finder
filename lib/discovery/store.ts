@@ -4,7 +4,19 @@ import type { CandidateProfile, JobResult, StartupResult } from "@/lib/types";
 import { query } from "@/lib/database";
 import { domainOf, normalizeLinkedin, normalizeName } from "@/lib/deduplication";
 import { classifyStartup } from "@/lib/classification";
-import { isNewStartup, fundingStatus, ycBatchFundingDate } from "@/lib/funding";
+import {
+  consolidateFunding,
+  fundingStage,
+  fundingStatus,
+  isNewStartup,
+  parseAmount,
+  toUsd,
+  ycBatchFundingDate,
+  type FundingReport,
+} from "@/lib/funding";
+import { usdRates, type UsdRates } from "@/lib/fx";
+import { confidenceRank } from "@/lib/country";
+import type { FundingResult } from "@/lib/types";
 import { isJobTooOld } from "@/lib/jobs/age";
 import { settings } from "@/config/settings";
 import { matchJob } from "@/lib/matching";
@@ -101,32 +113,68 @@ export async function upsertStartup(r: StartupResult, profile: CandidateProfile)
     }
   }
 
-  // ----- funding: newest dated announcement wins; undated only fills blanks -----
-  let funding = {
-    last_funding_date: existing?.last_funding_date ? new Date(existing.last_funding_date).toISOString().slice(0, 10) : null,
+  // ----- funding: every report is kept; the main round is derived from all of them -----
+  const rates = (await usdRates())?.rates ?? null;
+  const reports = mergeFundingReports(existingReports(existing, rates), r.funding ? reportFrom(r.funding, rates) : null);
+  const old = {
+    last_funding_date: existing?.last_funding_date ? String(existing.last_funding_date).slice(0, 10) : null,
     last_funding_amount: existing?.last_funding_amount ?? null,
     funding_round: existing?.funding_round ?? null,
     investors: existing?.investors ?? null,
     funding_source: existing?.funding_source ?? null,
     funding_source_url: existing?.funding_source_url ?? null,
   };
-  if (r.funding) {
-    const f = r.funding;
-    const newer = f.date && (!funding.last_funding_date || f.date > funding.last_funding_date);
-    const fillBlank = !funding.funding_round && !funding.last_funding_date;
-    if (newer || fillBlank) {
-      const next = {
-        last_funding_date: f.date,
-        last_funding_amount: f.amount,
-        funding_round: f.round,
-        investors: f.investors.length ? f.investors : null,
-        funding_source: f.source,
-        funding_source_url: f.sourceUrl,
-      };
-      if (existing && !same(next, funding)) changes.push("funding");
-      funding = next;
+  const cf = consolidateFunding(reports);
+  const p = cf.primary;
+  const funding = p
+    ? {
+        last_funding_date: cf.announcement_date,
+        last_funding_amount: p.amount,
+        funding_round: p.round,
+        investors: p.investors.length ? p.investors : null,
+        funding_source: p.source,
+        funding_source_url: p.url || null,
+      }
+    : old;
+  if (existing && p && !same(funding, old)) changes.push("funding");
+  const fundingExtra = {
+    funding_stage: p ? fundingStage(p.round) : existing?.funding_stage ?? null,
+    funding_kind: p?.kind ?? existing?.funding_kind ?? null,
+    funding_currency: p?.currency ?? null,
+    funding_amount_value: p?.amount_value ?? null,
+    funding_amount_usd: p?.amount_usd ?? null,
+    funding_verification_url: cf.verification_url,
+    funding_conflicts: JSON.stringify(cf.conflicts),
+    funding_reports: JSON.stringify(reports),
+  };
+
+  // ----- headquarters: stronger evidence wins; disagreeing evidence of the same strength is flagged -----
+  const hqOld = {
+    hq_country: existing?.hq_country ?? null,
+    hq_confidence: existing?.hq_confidence ?? null,
+    hq_evidence: existing?.hq_evidence ?? null,
+    hq_source_url: existing?.hq_source_url ?? null,
+  };
+  let hq = hqOld;
+  const hqConflicts: string[] = [];
+  if (r.hq?.country) {
+    const newRank = confidenceRank(r.hq.confidence);
+    const oldRank = confidenceRank(hqOld.hq_confidence);
+    if (hqOld.hq_country && hqOld.hq_country !== r.hq.country && newRank === oldRank) {
+      hqConflicts.push(`Headquarters: ${hqOld.hq_evidence} says ${hqOld.hq_country}; ${r.hq.evidence} says ${r.hq.country}`);
+    } else if (!hqOld.hq_country || newRank > oldRank || (newRank === oldRank && hqOld.hq_country === r.hq.country)) {
+      hq = { hq_country: r.hq.country, hq_confidence: r.hq.confidence, hq_evidence: r.hq.evidence, hq_source_url: r.hq.sourceUrl };
+      if (existing && hqOld.hq_country && hqOld.hq_country !== r.hq.country) changes.push("headquarters");
     }
   }
+  if (hqConflicts.length) fundingExtra.funding_conflicts = JSON.stringify([...cf.conflicts, ...hqConflicts]);
+  else if (existing?.funding_conflicts) {
+    // Keep earlier HQ conflicts (they aren't re-derived from funding reports).
+    const keep = (existing.funding_conflicts as string[]).filter((c) => c.startsWith("Headquarters:"));
+    if (keep.length) fundingExtra.funding_conflicts = JSON.stringify([...new Set([...cf.conflicts, ...keep])]);
+  }
+  const otherLocations = [...new Set([...(existing?.other_locations ?? []), ...(r.otherLocations ?? [])])];
+  const founders = r.founders?.length ? JSON.stringify(r.founders) : JSON.stringify(existing?.founders ?? []);
 
   // ----- classification (re-run when description/tags change) -----
   const tags = [...new Set([...(existing?.raw_tags ?? []), ...(r.tags ?? [])])];
@@ -151,6 +199,10 @@ export async function upsertStartup(r: StartupResult, profile: CandidateProfile)
     classification_reasons: JSON.stringify(keepOldCls ? existing.classification_reasons : cls.reasons),
     is_new_startup: isNewStartup(merged.founded_year),
     ...funding,
+    ...fundingExtra,
+    ...hq,
+    other_locations: otherLocations,
+    founders,
     funding_status: fundingStatus(funding.last_funding_date, funding.funding_round),
     sources_seen: sourcesSeen,
     field_sources: JSON.stringify(fieldSources),
@@ -198,6 +250,52 @@ export async function upsertStartup(r: StartupResult, profile: CandidateProfile)
   }
   await refreshRemoteAvailable(id);
   return { id, created, newJobs, newRelevantJobs: newRelevant, changes };
+}
+
+/** A source's funding as a stored report, with amount parsed and converted to USD when possible. */
+export function reportFrom(f: FundingResult, rates: UsdRates | null): FundingReport {
+  const parsed = parseAmount(f.amount);
+  return {
+    source: f.source,
+    url: f.sourceUrl,
+    date: f.date,
+    amount: f.amount,
+    round: f.round,
+    investors: f.investors ?? [],
+    kind: f.kind ?? "confirmed",
+    currency: parsed?.currency ?? null,
+    amount_value: parsed?.value ?? null,
+    amount_usd: toUsd(parsed, rates),
+  };
+}
+
+/** Reports already stored; rows from before reports existed are turned into one report from their columns. */
+function existingReports(existing: any, rates: UsdRates | null): FundingReport[] {
+  if (!existing) return [];
+  const stored = (existing.funding_reports ?? []) as FundingReport[];
+  if (stored.length) return stored;
+  if (!existing.funding_round && !existing.last_funding_date) return [];
+  return [
+    reportFrom(
+      {
+        date: existing.last_funding_date ? String(existing.last_funding_date).slice(0, 10) : null,
+        amount: existing.last_funding_amount ?? null,
+        round: existing.funding_round ?? null,
+        investors: existing.investors ?? [],
+        source: existing.funding_source ?? "Unknown source",
+        sourceUrl: existing.funding_source_url ?? "",
+        kind: existing.funding_kind ?? "confirmed",
+      },
+      rates
+    ),
+  ];
+}
+
+/** Same article = same report (refreshed); keeps the 12 most recent. */
+export function mergeFundingReports(list: FundingReport[], next: FundingReport | null): FundingReport[] {
+  const out = next ? [...list.filter((r) => !(r.url && r.url === next.url) && !(!r.url && r.source === next.source && r.round === next.round)), next] : [...list];
+  const key = (r: FundingReport) => r.date ?? ycBatchFundingDate(r.round) ?? "";
+  return out.sort((a, b) => key(b).localeCompare(key(a))).slice(0, 12);
 }
 
 async function upsertJobs(startupId: number, r: StartupResult, profile: CandidateProfile) {

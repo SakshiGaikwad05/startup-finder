@@ -1,123 +1,36 @@
 "use client";
-import type { StartupView } from "@/lib/types";
 import { LOCATION_OPTIONS } from "@/lib/types";
 import { ROLE_CATEGORIES } from "@/lib/jobs/roles";
-import { STARTUP_TYPE_OPTIONS } from "@/lib/resume/parse";
-import type { CandidateProfile } from "@/lib/types";
+import { INDUSTRY_CATEGORIES } from "@/lib/classification";
+import { STAGE_LABELS } from "@/lib/funding";
 import { Icon } from "./Icon";
 
-/** Default filters for a user: their locations and preferred startup types. */
-export function filtersForProfile(p: CandidateProfile | null | undefined): FilterState {
-  if (!p) return DEFAULT_FILTERS;
-  // Skipped onboarding: recently funded startups, anywhere, newest funding first.
-  if (p.explorer) return { ...DEFAULT_FILTERS, view: "all", locations: [], funding: ["funded_180"], hiringOnly: false, sort: "funding" };
-  const locs = (p.preferred_locations ?? []).filter((l) => (LOCATION_OPTIONS as readonly string[]).includes(l));
-  // Someone who wants "Remote - India" should also see remote jobs whose region isn't stated.
-  if (locs.includes("Remote - India") && !locs.includes("Remote")) locs.push("Remote");
-  // Start on "All startups" (best matches first) so a new user never lands on an empty view.
-  return { ...DEFAULT_FILTERS, view: "all", locations: locs.length ? locs : DEFAULT_FILTERS.locations, types: p.preferred_startup_types ?? [] };
-}
+export {
+  AMOUNT_BUCKETS,
+  ARRANGEMENT_OPTIONS,
+  applyFilters,
+  COUNTRY_OPTIONS,
+  DEFAULT_FILTERS,
+  EXPERIENCE_LEVELS,
+  filtersForProfile,
+  FUNDING_DAY_OPTIONS,
+  fundingWindow,
+  STAGE_OPTIONS,
+  type FilterState,
+} from "@/lib/filters";
+import {
+  AMOUNT_BUCKETS,
+  ARRANGEMENT_OPTIONS,
+  COUNTRY_OPTIONS,
+  DEFAULT_FILTERS,
+  EXPERIENCE_LEVELS,
+  FUNDING_DAY_OPTIONS,
+  fundingWindow,
+  STAGE_OPTIONS,
+  type FilterState,
+} from "@/lib/filters";
 
-export interface FilterState {
-  view: "today" | "all";
-  locations: string[];
-  ai: { ai: boolean; nonAi: boolean; unknown: boolean };
-  funding: string[]; // funded_30 | funded_90 | funded_180
-  age: string[]; // new | early | growing | established
-  roles: string[]; // job-role categories; empty = all roles
-  levels?: string[]; // experience a job asks for: fresher | junior | experienced | unknown; empty = any
-  types?: string[]; // startup types ("AI", "HealthTech", …); empty = all
-  hiringOnly: boolean;
-  matchingOnly: boolean;
-  relevance?: string[]; // best match level: strong (great) | potential (good); empty = any
-  emailOnly?: boolean;
-  search: string;
-  sort: "match" | "discovered" | "funding" | "founded" | "relevant_jobs";
-}
-
-export const DEFAULT_FILTERS: FilterState = {
-  view: "today",
-  locations: ["Pune", "Remote", "Remote - India"],
-  ai: { ai: true, nonAi: true, unknown: true },
-  funding: [],
-  age: [],
-  roles: [],
-  hiringOnly: true,
-  matchingOnly: false,
-  search: "",
-  sort: "match",
-};
-
-const FUNDING_RANK: Record<string, number> = { funded_30: 1, funded_90: 2, funded_180: 3 };
-
-export const EXPERIENCE_LEVELS = [
-  ["fresher", "Fresher (0–1 yr)", "Internships, entry-level, or 0–1 years asked"],
-  ["junior", "2–3 yrs", "Asks for 2–3 years of experience"],
-  ["experienced", "4+ yrs / senior", "Senior titles or 4+ years asked"],
-  ["unknown", "Not stated", "The job doesn't say how much experience it needs"],
-] as const;
-
-/** With a role or experience filter, each startup keeps only matching jobs (counts and best match follow). */
-function restrictJobs(s: StartupView, roles: string[], levels: string[]): StartupView {
-  if (!roles.length && !levels.length) return s;
-  const jobs = s.jobs.filter(
-    (j) => (!roles.length || j.role_categories.some((c) => roles.includes(c))) && (!levels.length || levels.includes(j.experience_level))
-  );
-  const relevant = jobs.filter((j) => j.match.relevance === "strong" || j.match.relevance === "potential");
-  return {
-    ...s,
-    jobs,
-    relevant_jobs: relevant.length,
-    best_match: relevant.reduce((m, j) => Math.max(m, j.match.match_score), 0),
-    relevance: relevant.some((j) => j.match.relevance === "strong") ? "strong" : relevant.length ? "potential" : "low",
-  };
-}
-
-export function applyFilters(list: StartupView[], f: FilterState): StartupView[] {
-  const roles = f.roles ?? [];
-  const levels = f.levels ?? [];
-  const out = list.map((s) => restrictJobs(s, roles, levels)).filter((s) => {
-    if ((roles.length || levels.length) && s.jobs.length === 0) return false;
-    if (f.view === "today" && !s.is_fresh) return false;
-    if (f.locations.length && !s.location_tags.includes("Unknown") && !s.location_tags.some((t) => f.locations.includes(t))) return false;
-    const types = f.types ?? [];
-    if (types.length && !((types.includes("AI") && (s.is_ai === true || s.industry === "AI Startup")) || (s.industry && types.includes(s.industry)))) return false;
-    if (s.is_ai === true && !f.ai.ai) return false;
-    if (s.is_ai === false && !f.ai.nonAi) return false;
-    if (s.is_ai === null && !f.ai.unknown) return false;
-    if (f.funding.length) {
-      // "Funded <90 days" also includes <30 days, etc.
-      const max = Math.max(...f.funding.map((x) => FUNDING_RANK[x]));
-      const r = FUNDING_RANK[s.funding_status];
-      if (!r || r > max) return false;
-    }
-    if (f.age.length && !f.age.includes(s.age_bucket)) return false;
-    if (f.hiringOnly && s.jobs.length === 0) return false;
-    if (f.matchingOnly && s.relevant_jobs === 0) return false;
-    if (f.relevance?.length && !f.relevance.includes(s.relevance)) return false;
-    if (f.emailOnly && s.emails.length === 0) return false;
-    if (f.search) {
-      const q = f.search.toLowerCase();
-      const hay = `${s.name} ${s.description ?? ""} ${s.industry ?? ""} ${s.jobs.map((j) => j.job_title).join(" ")}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
-  const by: Record<FilterState["sort"], (a: StartupView, b: StartupView) => number> = {
-    match: (a, b) => b.best_match - a.best_match || b.relevant_jobs - a.relevant_jobs,
-    discovered: (a, b) => b.first_discovered_at.localeCompare(a.first_discovered_at),
-    funding: (a, b) => (b.last_funding_date ?? "").localeCompare(a.last_funding_date ?? ""),
-    founded: (a, b) => (b.founded_year ?? 0) - (a.founded_year ?? 0),
-    relevant_jobs: (a, b) => b.relevant_jobs - a.relevant_jobs || b.best_match - a.best_match,
-  };
-  return out.sort(by[f.sort]);
-}
-
-const FUNDING_OPTIONS = [
-  ["funded_30", "Last 30 days"],
-  ["funded_90", "Last 3 months"],
-  ["funded_180", "Last 6 months"],
-] as const;
+const daysLabel = (d: number) => (d === 180 ? "last 6 months" : `last ${d} days`);
 
 const AGE_OPTIONS = [
   ["new", "New (2024+)"],
@@ -189,18 +102,25 @@ export function activeFilterChips(f: FilterState, set: (f: FilterState) => void)
     const label = EXPERIENCE_LEVELS.find(([k]) => k === l)?.[1] ?? l;
     chips.push({ key: `e:${l}`, label, remove: () => set({ ...f, levels: (f.levels ?? []).filter((x) => x !== l) }) });
   }
+  for (const a of f.arrangements ?? [])
+    chips.push({ key: `w:${a}`, label: ARRANGEMENT_OPTIONS.find(([k]) => k === a)?.[1] ?? a, remove: () => set({ ...f, arrangements: (f.arrangements ?? []).filter((x) => x !== a) }) });
+  const country = f.country ?? "any";
+  if (country !== "any") chips.push({ key: "c", label: COUNTRY_OPTIONS.find(([k]) => k === country)![1], remove: () => set({ ...f, country: "any" }) });
   for (const l of f.locations) chips.push({ key: `l:${l}`, label: l, remove: () => set({ ...f, locations: f.locations.filter((x) => x !== l) }) });
   for (const t of f.types ?? []) chips.push({ key: `t:${t}`, label: t, remove: () => set({ ...f, types: (f.types ?? []).filter((x) => x !== t) }) });
-  for (const k of f.funding) {
-    const label = FUNDING_OPTIONS.find(([x]) => x === k)?.[1] ?? k;
-    chips.push({ key: `f:${k}`, label: `Funded: ${label.toLowerCase()}`, remove: () => set({ ...f, funding: f.funding.filter((x) => x !== k) }) });
-  }
+  const days = fundingWindow(f);
+  if (days != null) chips.push({ key: "f", label: `Funded: ${daysLabel(days)}`, remove: () => set({ ...f, fundingDays: null, funding: [] }) });
+  if (f.confirmedOnly) chips.push({ key: "fc", label: "Confirmed funding only", remove: () => set({ ...f, confirmedOnly: false }) });
+  for (const st of f.stages ?? [])
+    chips.push({ key: `s:${st}`, label: STAGE_LABELS[st as keyof typeof STAGE_LABELS] ?? st, remove: () => set({ ...f, stages: (f.stages ?? []).filter((x) => x !== st) }) });
+  for (const a of f.amounts ?? [])
+    chips.push({ key: `$:${a}`, label: AMOUNT_BUCKETS.find(([k]) => k === a)?.[1] ?? a, remove: () => set({ ...f, amounts: (f.amounts ?? []).filter((x) => x !== a) }) });
   for (const a of f.age) chips.push({ key: `a:${a}`, label: AGE_OPTIONS.find(([x]) => x === a)?.[1] ?? a, remove: () => set({ ...f, age: f.age.filter((x) => x !== a) }) });
   for (const r of f.relevance ?? [])
     chips.push({ key: `m:${r}`, label: r === "strong" ? "Great matches" : "Good matches", remove: () => set({ ...f, relevance: (f.relevance ?? []).filter((x) => x !== r) }) });
-  if (f.hiringOnly) chips.push({ key: "hiring", label: "Hiring now", remove: () => set({ ...f, hiringOnly: false }) });
+  if (f.hiringOnly) chips.push({ key: "hiring", label: "Verified openings", remove: () => set({ ...f, hiringOnly: false }) });
   if (f.matchingOnly) chips.push({ key: "fits", label: "Has a job that fits me", remove: () => set({ ...f, matchingOnly: false }) });
-  if (f.emailOnly) chips.push({ key: "email", label: "Has an email", remove: () => set({ ...f, emailOnly: false }) });
+  if (f.emailOnly) chips.push({ key: "email", label: "Public contact email", remove: () => set({ ...f, emailOnly: false }) });
   if (f.search) chips.push({ key: "q", label: `“${f.search}”`, remove: () => set({ ...f, search: "" }) });
   return chips;
 }
@@ -209,11 +129,24 @@ export function Filters({ f, set, defaults = DEFAULT_FILTERS }: { f: FilterState
   const roles = f.roles ?? [];
   const levels = f.levels ?? [];
   const types = f.types ?? [];
+  const arrangements = f.arrangements ?? [];
+  const stages = f.stages ?? [];
+  const amounts = f.amounts ?? [];
+  const country = f.country ?? "any";
+  const days = fundingWindow(f);
   return (
     <div className="text-sm">
+      <Group title="Country" hint="Where the startup is headquartered (not where its investors are)" active={country === "any" ? 0 : 1}>
+        <div className="flex flex-wrap gap-2">
+          {COUNTRY_OPTIONS.map(([k, l]) => (
+            <Pill key={k} label={l} on={country === k} onClick={() => set({ ...f, country: k })} />
+          ))}
+        </div>
+      </Group>
+
       <Group
-        title="Experience needed"
-        hint={levels.length ? "Only jobs at these levels are shown" : "Pick Fresher to see entry-level jobs only"}
+        title="Role type"
+        hint={levels.length ? "Only jobs at these levels are shown" : "Pick Internship or Fresher to see entry-level jobs only"}
         active={levels.length}
       >
         <div className="flex flex-wrap gap-2">
@@ -231,20 +164,57 @@ export function Filters({ f, set, defaults = DEFAULT_FILTERS }: { f: FilterState
         </div>
       </Group>
 
-      <Group title="Recently funded" active={f.funding.length} hint={f.funding.length ? "Startups that raised money in this period" : "Any funding date"}>
+      <Group
+        title="Recently funded"
+        active={(days != null ? 1 : 0) + (f.confirmedOnly ? 1 : 0)}
+        hint={days != null ? "By the date the round was announced" : "Any funding date"}
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {FUNDING_DAY_OPTIONS.map((d) => (
+              // One period at a time ("30 days" already includes "7 days").
+              // Funding spans months, so picking a period looks at all startups, not just today's changes.
+              // News-found startups usually have no jobs listed yet, so "Verified openings" is turned off too.
+              <Pill
+                key={d}
+                label={`${d} days`}
+                on={days === d}
+                onClick={() => set(days === d ? { ...f, fundingDays: null, funding: [] } : { ...f, fundingDays: d, funding: [], view: "all", hiringOnly: false })}
+              />
+            ))}
+            {days === 180 && <Pill label="6 months" on onClick={() => set({ ...f, fundingDays: null, funding: [] })} />}
+            <Pill label="Any time" on={days == null} onClick={() => set({ ...f, fundingDays: null, funding: [] })} />
+          </div>
+          <Switch
+            label="Confirmed announcements only"
+            hint="Hide planned rounds and unconfirmed reports"
+            on={!!f.confirmedOnly}
+            onChange={(v) => set({ ...f, confirmedOnly: v })}
+          />
+        </div>
+      </Group>
+
+      <Group title="Funding stage" active={stages.length} defaultOpen={stages.length > 0}>
         <div className="flex flex-wrap gap-2">
-          {FUNDING_OPTIONS.map(([k, l]) => (
-            // One period at a time ("3 months" already includes "30 days").
-            // Funding spans months, so picking a period looks at all startups, not just today's changes.
-            // News-found startups usually have no jobs listed yet, so "Hiring now" is turned off too.
-            <Pill
-              key={k}
-              label={l}
-              on={f.funding.includes(k)}
-              onClick={() => set(f.funding.includes(k) ? { ...f, funding: [] } : { ...f, funding: [k], view: "all", hiringOnly: false })}
-            />
+          {STAGE_OPTIONS.map((k) => (
+            <Pill key={k} label={STAGE_LABELS[k]} on={stages.includes(k)} onClick={() => set({ ...f, stages: toggle(stages, k), view: "all" })} />
           ))}
-          <Pill label="Any time" on={!f.funding.length} onClick={() => set({ ...f, funding: [] })} />
+        </div>
+      </Group>
+
+      <Group title="Funding amount" active={amounts.length} defaultOpen={amounts.length > 0} hint="In US dollars. Amounts we couldn't read are hidden when this is on">
+        <div className="flex flex-wrap gap-2">
+          {AMOUNT_BUCKETS.map(([k, l]) => (
+            <Pill key={k} label={l} on={amounts.includes(k)} onClick={() => set({ ...f, amounts: toggle(amounts, k), view: "all" })} />
+          ))}
+        </div>
+      </Group>
+
+      <Group title="Work arrangement" active={arrangements.length} defaultOpen={arrangements.length > 0} hint="Only what the job posting itself says">
+        <div className="flex flex-wrap gap-2">
+          {ARRANGEMENT_OPTIONS.map(([k, l]) => (
+            <Pill key={k} label={l} on={arrangements.includes(k)} onClick={() => set({ ...f, arrangements: toggle(arrangements, k) })} />
+          ))}
         </div>
       </Group>
 
@@ -273,18 +243,29 @@ export function Filters({ f, set, defaults = DEFAULT_FILTERS }: { f: FilterState
               <Pill key={k} label={l} on={(f.relevance ?? []).includes(k)} onClick={() => set({ ...f, relevance: toggle(f.relevance ?? [], k) })} />
             ))}
           </div>
-          <Switch label="Hiring now" hint="Has at least one open job" on={f.hiringOnly} onChange={(v) => set({ ...f, hiringOnly: v })} />
+          <Switch
+            label="Has verified job openings"
+            hint="An open job read from a job board or their own careers page"
+            on={f.hiringOnly}
+            onChange={(v) => set({ ...f, hiringOnly: v })}
+          />
           <Switch label="Has a job that fits me" hint="A great or good match" on={f.matchingOnly} onChange={(v) => set({ ...f, matchingOnly: v })} />
-          <Switch label="Has a contact email" hint="Published on their website" on={!!f.emailOnly} onChange={(v) => set({ ...f, emailOnly: v })} />
+          <Switch label="Has public contact email" hint="Published on their own website" on={!!f.emailOnly} onChange={(v) => set({ ...f, emailOnly: v })} />
         </div>
       </Group>
 
-      <Group title="Kind of startup" active={types.length} defaultOpen={types.length > 0}>
+      <Group title="Industry" active={types.length} defaultOpen={types.length > 0}>
         <div className="flex flex-wrap gap-2">
           <Pill label="Any" on={!types.length} onClick={() => set({ ...f, types: [] })} />
-          {STARTUP_TYPE_OPTIONS.map((t) => (
+          {INDUSTRY_CATEGORIES.map((t) => (
             <Pill key={t} label={t} on={types.includes(t)} onClick={() => set({ ...f, types: toggle(types, t) })} />
           ))}
+          {/* Profile preferences from onboarding that aren't one of the categories above stay removable. */}
+          {types
+            .filter((t) => !(INDUSTRY_CATEGORIES as readonly string[]).includes(t))
+            .map((t) => (
+              <Pill key={t} label={t === "AI" ? "AI (from your profile)" : t} on onClick={() => set({ ...f, types: toggle(types, t) })} />
+            ))}
         </div>
       </Group>
 

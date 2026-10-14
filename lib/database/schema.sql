@@ -57,6 +57,24 @@ CREATE TABLE IF NOT EXISTS startups (
 -- Contact emails found on the startup's own site: [{email, type, source_url, domain_accepts_mail}]
 ALTER TABLE startups ADD COLUMN IF NOT EXISTS emails JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE startups ADD COLUMN IF NOT EXISTS emails_checked_at TIMESTAMPTZ;
+-- Headquarters country (India / United States) with the evidence behind it. `location` stays the HQ text.
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS hq_country TEXT;
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS hq_confidence TEXT;           -- 'high' | 'medium' | 'low'
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS hq_evidence TEXT;
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS hq_source_url TEXT;
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS other_locations TEXT[] NOT NULL DEFAULT '{}';
+-- Founders only from structured public pages (YC): [{name, title, profile_url, source_url}]
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS founders JSONB NOT NULL DEFAULT '[]';
+-- Funding details. last_funding_* above stay the primary round; every report is kept for verification.
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_stage TEXT;           -- pre_seed | seed | series_a | series_b_plus | accelerator | debt | other
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_kind TEXT;            -- confirmed | planned | rumored
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_currency TEXT;        -- INR | USD | EUR | GBP
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_amount_value NUMERIC; -- in funding_currency units
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_amount_usd NUMERIC;   -- only when a free FX rate was available
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_verification_url TEXT;
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_conflicts JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_reports JSONB NOT NULL DEFAULT '[]';
+CREATE INDEX IF NOT EXISTS startups_hq_country_idx ON startups (hq_country);
 CREATE UNIQUE INDEX IF NOT EXISTS startups_domain_uq ON startups (domain) WHERE domain IS NOT NULL;
 CREATE INDEX IF NOT EXISTS startups_norm_idx ON startups (normalized_name);
 CREATE INDEX IF NOT EXISTS startups_linkedin_idx ON startups (linkedin_url);

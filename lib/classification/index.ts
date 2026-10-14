@@ -62,6 +62,47 @@ function structuredIndustry(hint: string | null, tags: string[]): string | undef
   return undefined;
 }
 
+/** Industry categories shown in the Industry filter. A startup can be in several. */
+export const INDUSTRY_CATEGORIES = [
+  "AI & AI Agents",
+  "Generative AI & LLMs",
+  "SaaS",
+  "Developer Tools",
+  "FinTech",
+  "HealthTech",
+  "EdTech",
+  "Cybersecurity",
+  "E-commerce",
+  "ClimateTech",
+  "Robotics",
+  "Enterprise Software",
+  "Data & Analytics",
+  "Other",
+] as const;
+
+const SAME_NAME = new Set(["SaaS", "Developer Tools", "FinTech", "HealthTech", "EdTech", "Cybersecurity", "E-commerce", "ClimateTech"]);
+
+/** Categories from the stored classification plus a few extra description signals. Never empty. */
+export function startupCategories(s: {
+  industry: string | null;
+  is_ai: boolean | null;
+  ai_category: string | null;
+  description: string | null;
+  tags?: string[];
+}): string[] {
+  const text = `${s.description ?? ""} ${(s.tags ?? []).join(" ")}`;
+  const out = new Set<string>();
+  if (s.is_ai === true || s.industry === "AI Startup") out.add("AI & AI Agents");
+  if (s.is_ai === true && (s.ai_category === "Generative AI / LLM apps" || /generative ai|\bgenai\b|\bllms?\b|large language model/i.test(text)))
+    out.add("Generative AI & LLMs");
+  if (s.industry && SAME_NAME.has(s.industry)) out.add(s.industry);
+  if (/\brobot(s|ics)?\b|\bdrones?\b|humanoid|autonomous (vehicle|machine|system)s?|warehouse automation/i.test(text)) out.add("Robotics");
+  if (/\benterprises?\b|\berp\b|\bcrm\b|back-?office|for (large )?companies/i.test(text)) out.add("Enterprise Software");
+  if (/\banalytics\b|business intelligence|data (platform|pipelines?|warehouse|engineering|infrastructure)|\bdashboards?\b/i.test(text)) out.add("Data & Analytics");
+  if (!out.size) out.add("Other");
+  return [...out];
+}
+
 export function classifyStartup(input: ClassificationInput): Classification {
   const reasons: string[] = [];
   const desc = input.description ?? "";

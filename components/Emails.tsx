@@ -1,13 +1,8 @@
 "use client";
 import { useState } from "react";
 import type { FoundEmail } from "@/lib/types";
+import { emailLabel } from "@/lib/emails/labels";
 import { Icon } from "./Icon";
-
-const TYPE_LABEL: Record<FoundEmail["type"], string> = {
-  careers: "Careers",
-  general: "General",
-  person: "Person",
-};
 
 export function CopyButton({ text, label = "Copy email" }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -32,7 +27,7 @@ export function CopyButton({ text, label = "Copy email" }: { text: string; label
 /** Emails found on the startup's own site. `limit` keeps cards compact. */
 export function Emails({ emails, limit, checked }: { emails: FoundEmail[]; limit?: number; checked?: boolean }) {
   if (!emails.length) {
-    return checked ? <p className="text-sm text-gray-500">No email address is published on their website.</p> : null;
+    return checked ? <p className="text-sm text-gray-500">Not publicly available. No email address is published on their website.</p> : null;
   }
   const shown = limit ? emails.slice(0, limit) : emails;
   return (
@@ -43,7 +38,7 @@ export function Emails({ emails, limit, checked }: { emails: FoundEmail[]; limit
           <a href={`mailto:${e.email}`} className="min-w-0 break-all font-medium text-gray-800 hover:text-brand-700 hover:underline">
             {e.email}
           </a>
-          <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600">{TYPE_LABEL[e.type]}</span>
+          <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600">{emailLabel(e)}</span>
           {e.domain_accepts_mail === true && (
             <span className="inline-flex items-center gap-1 text-xs text-emerald-700" title="The domain has mail servers (MX records), so it can receive email">
               <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.5} />

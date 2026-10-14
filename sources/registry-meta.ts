@@ -17,10 +17,18 @@ export const SOURCE_DEFS = [
   },
   {
     id: "funding_rss",
-    name: "Funding news (Inc42, YourStory, TechCrunch)",
+    name: "Funding news (Inc42, ET, Entrackr, YourStory, TechCrunch, Crunchbase News)",
     kind: "news",
     baseUrl: null,
-    notes: "Public RSS feeds. Only headlines that explicitly state a raise are parsed; the article URL is stored as the funding source.",
+    notes:
+      "Free public RSS feeds (robots.txt checked). Only headlines that state a raise are parsed; planned rounds and unconfirmed reports are labelled as such. The article URL is stored as the funding source.",
+  },
+  {
+    id: "fx_frankfurter",
+    name: "Exchange rates (Frankfurter, ECB)",
+    kind: "reference",
+    baseUrl: "https://api.frankfurter.app",
+    notes: "Free, no key. Converts INR/EUR/GBP amounts to USD for the amount filter. If unavailable, the original amount is shown.",
   },
   {
     id: "company_careers",

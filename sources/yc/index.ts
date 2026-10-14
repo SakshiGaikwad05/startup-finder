@@ -9,6 +9,40 @@ import { settings } from "@/config/settings";
 import { ycBatchFundingDate } from "@/lib/funding";
 import { query } from "@/lib/database";
 import { normalizeName } from "@/lib/deduplication";
+import { countryFromCode, countryFromLocation } from "@/lib/country";
+import type { Founder, Headquarters } from "@/lib/types";
+
+/** YC lists the HQ as `location` + a `country` code; `all_locations` also includes other offices. */
+export function ycHeadquarters(company: any, c: { all_locations?: string }, pageUrl: string): { hq: Headquarters | null; others: string[] } {
+  const hqText: string | null = company?.location || null;
+  const byCode = countryFromCode(company?.country);
+  const country = byCode ?? countryFromLocation(hqText);
+  const hq: Headquarters | null = country
+    ? {
+        country,
+        confidence: byCode ? "high" : "medium",
+        evidence: byCode ? `YC company page: HQ ${hqText ?? ""} (${company.country})`.replace(" ()", "") : `YC company page: HQ ${hqText}`,
+        sourceUrl: pageUrl,
+      }
+    : null;
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+  const others = (c.all_locations ?? "")
+    .split(/\s*;\s*/)
+    .map((s) => s.trim())
+    .filter((s) => s && !/^remote$/i.test(s) && (!hqText || !norm(s).startsWith(norm(hqText.split(",")[0]))));
+  return { hq, others: [...new Set(others)] };
+}
+
+export function ycFounders(company: any, pageUrl: string): Founder[] {
+  return (Array.isArray(company?.founders) ? company.founders : [])
+    .filter((f: any) => typeof f?.full_name === "string" && f.full_name.trim())
+    .map((f: any) => ({
+      name: f.full_name.trim(),
+      title: f.title || null,
+      profile_url: f.linkedin_url || f.twitter_url || null,
+      source_url: pageUrl,
+    }));
+}
 
 const HIRING_URL = "https://yc-oss.github.io/api/companies/hiring.json";
 const YC = "https://www.ycombinator.com";
@@ -152,8 +186,12 @@ export const ycSource: StartupSource = {
           sourceUrl: jobUrl,
         };
       });
+      const { hq, others } = ycHeadquarters(company, c, pageUrl);
       results.push({
         name: c.name,
+        hq,
+        otherLocations: others,
+        founders: ycFounders(company, pageUrl),
         website: c.website || company.website || null,
         linkedinUrl: company.linkedin_url || null,
         description: c.long_description || c.one_liner || null,

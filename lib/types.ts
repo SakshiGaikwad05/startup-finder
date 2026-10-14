@@ -1,6 +1,8 @@
 // Shared types. `null` always means "unknown / not verified".
 import type { FoundEmail } from "@/lib/emails";
-export type { FoundEmail };
+import type { AnnouncementKind, Currency, FundingReport, FundingStage } from "@/lib/funding";
+import type { HqConfidence, HqCountry } from "@/lib/country";
+export type { FoundEmail, FundingReport, HqCountry };
 
 export interface CandidateProfile {
   name?: string;
@@ -47,11 +49,28 @@ export interface JobResult {
 }
 
 export interface FundingResult {
-  date: string | null; // ISO date
+  date: string | null; // ISO date the announcement was published (not when we found it)
   amount: string | null;
   round: string | null;
   investors: string[];
   source: string;
+  sourceUrl: string;
+  /** Confirmed raise vs planned / unconfirmed report. Defaults to confirmed. */
+  kind?: AnnouncementKind;
+}
+
+export interface Founder {
+  name: string;
+  title: string | null;
+  profile_url: string | null;
+  source_url: string;
+}
+
+export interface Headquarters {
+  country: HqCountry | null;
+  confidence: HqConfidence;
+  /** Why we think so, e.g. "YC company page: country IN" or "“Bengaluru-based” in Inc42 headline". */
+  evidence: string;
   sourceUrl: string;
 }
 
@@ -72,6 +91,11 @@ export interface StartupResult {
   jobs?: JobResult[];
   /** Emails found on the startup's own pages. Undefined = not checked this time. */
   emails?: FoundEmail[];
+  /** Headquarters country with evidence. Undefined = this source doesn't say. */
+  hq?: Headquarters | null;
+  /** Other office locations, separate from the headquarters. */
+  otherLocations?: string[];
+  founders?: Founder[];
 }
 
 export interface DiscoveryContext {
@@ -128,8 +152,14 @@ export interface JobView {
   role_categories: string[];
   /** Experience the job asks for: fresher (0–1 yr) | junior (2–3) | experienced (4+) | unknown. */
   experience_level: "fresher" | "junior" | "experienced" | "unknown";
+  /** Internship, or the experience level for other jobs. */
+  role_type: RoleType;
+  work_arrangement: WorkArrangement;
   match: JobMatch;
 }
+
+export type RoleType = "internship" | "fresher" | "junior" | "experienced" | "unknown";
+export type WorkArrangement = "remote" | "hybrid" | "onsite" | "unknown";
 
 export interface ApplicationView {
   id: number;
@@ -169,6 +199,27 @@ export interface StartupView {
   investors: string[] | null;
   funding_source: string | null;
   funding_source_url: string | null;
+  /** True when last_funding_date is only estimated (YC batch → Demo Day), not an announcement date. */
+  funding_date_approximate: boolean;
+  /** Normalised stage, null when the round isn't stated. */
+  funding_stage: FundingStage | null;
+  funding_kind: AnnouncementKind | null;
+  funding_currency: Currency | null;
+  /** Amount in USD when the currency is known and a free exchange rate was available. */
+  funding_amount_usd: number | null;
+  funding_verification_url: string | null;
+  funding_conflicts: string[];
+  funding_reports: FundingReport[];
+  hq_country: HqCountry | null;
+  hq_confidence: HqConfidence | null;
+  hq_evidence: string | null;
+  hq_source_url: string | null;
+  other_locations: string[];
+  founders: Founder[];
+  /** Our industry categories (a startup can have several). */
+  categories: string[];
+  /** When a source last confirmed this startup's details. */
+  last_verified_at: string;
   source: string;
   source_url: string | null;
   sources_seen: string[];
