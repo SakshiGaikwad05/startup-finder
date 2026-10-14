@@ -27,9 +27,13 @@ export const settings = {
   /** Max company websites checked for a careers page per run */
   maxCareersChecks: 25,
   /** Open source: YC pages read per run to find GitHub accounts, GitHub searches per run, accounts per search */
-  ossMaxCompanyPages: 25,
-  ossMaxSearches: 8,
+  ossMaxCompanyPages: 50,
+  ossMaxSearches: 10,
   ossOrgsPerSearch: 8,
+  /** Open source, popular projects: repos per run (GitHub repo search), repos per issue search, minimum stars */
+  ossPopularRepos: 30,
+  ossReposPerSearch: 6,
+  ossPopularMinStars: 1000,
   /** Open source: only issues updated in the last N days are suggested */
   ossIssueMaxAgeDays: 180,
   /** Cache lifetimes */

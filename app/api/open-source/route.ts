@@ -11,9 +11,10 @@ export async function GET(req: Request) {
   try {
     const [projects, [stats]] = await Promise.all([
       query(
-        `SELECT repo, github_org, company_name, company_yc_url, company_website, one_liner, yc_batch, hiring,
+        `SELECT repo, origin, github_org, company_name, company_yc_url, company_website, one_liner, yc_batch, hiring,
+                stars, language, repo_description,
                 beginner_issues, issue_title, issue_url, issue_labels, issue_comments, issue_updated_at, fetched_at
-         FROM oss_projects ORDER BY hiring DESC, issue_updated_at DESC NULLS LAST LIMIT 300`
+         FROM oss_projects ORDER BY (origin = 'yc') DESC, hiring DESC, issue_updated_at DESC NULLS LAST LIMIT 500`
       ),
       query<{ companies: number; with_github: number; last_search: string | null }>(
         "SELECT count(*)::int companies, count(github_org)::int with_github, max(searched_at) last_search FROM oss_orgs"

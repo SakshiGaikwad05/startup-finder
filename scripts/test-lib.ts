@@ -13,7 +13,7 @@ import { parseResumeText } from "@/lib/resume/parse";
 import { rateLimit } from "@/lib/rate-limit";
 import { hashToken } from "@/lib/users";
 import { himalayasJob } from "@/sources/jobs/himalayas";
-import { beginnerIssueQuery, pickSuggestedIssue, repoOf, type GhIssue } from "@/sources/oss";
+import { beginnerIssueQuery, pickSuggestedIssue, popularRepoQuery, repoOf, type GhIssue } from "@/sources/oss";
 import { isJobTooOld, jobAgeDays } from "@/lib/jobs/age";
 import { fundedRecentlyEnough } from "@/lib/discovery/store";
 import { careersLink, jobPostingsFromJsonLd } from "@/sources/company";
@@ -334,6 +334,12 @@ t("suggested issue: 'good first issue' first, then fewest comments, then most re
   ]);
   assert.equal(pick.title, "gfi-quiet-new");
   assert.equal(repoOf(pick), "acme/app");
+});
+t("popular projects: repo search, then issues scoped to those repos", () => {
+  const rq = popularRepoQuery(1000, "2026-10-01");
+  assert.ok(rq.includes("good-first-issues:>=3") && rq.includes("stars:>=1000") && rq.includes("pushed:>=2026-10-01") && rq.includes("archived:false"));
+  const iq = beginnerIssueQuery(["oven-sh/bun", "vllm-project/vllm"], "2026-04-14", "repo");
+  assert.ok(iq.includes("repo:oven-sh/bun repo:vllm-project/vllm") && !iq.includes("user:"));
 });
 t("beginner-issue search covers several accounts and recent issues only", () => {
   const q = beginnerIssueQuery(["PostHog", "cedana"], "2026-04-14");

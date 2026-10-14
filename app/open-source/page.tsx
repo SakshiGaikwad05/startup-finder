@@ -7,10 +7,15 @@ import { api } from "@/components/api";
 import { Pill } from "@/components/Filters";
 import { Icon } from "@/components/Icon";
 import { daysAgo } from "@/components/format";
-import { Banner, btnPrimary, btnSecondary, CardSkeleton, EmptyState, PageHeader } from "@/components/ui";
+import { Banner, btnPrimary, btnSecondary, CardSkeleton, EmptyState, PageHeader, Select } from "@/components/ui";
 
 interface Project {
   repo: string;
+  /** 'yc' = a YC open-source company's repo; 'popular' = an active, well-starred GitHub project. */
+  origin: "yc" | "popular";
+  stars: number | null;
+  language: string | null;
+  repo_description: string | null;
   github_org: string;
   company_name: string;
   company_yc_url: string | null;
@@ -37,6 +42,11 @@ const beginnerIssuesUrl = (repo: string) =>
 
 const recentBatch = (b: string | null) => !!b && /(2025|2026)/.test(b);
 
+/** 96235 → "96.2k". */
+const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n));
+
+type Origin = "all" | "yc" | "popular";
+
 function ProjectCard({ p }: { p: Project }) {
   const [owner, name] = p.repo.split("/");
   return (
@@ -56,17 +66,28 @@ function ProjectCard({ p }: { p: Project }) {
             </span>
           </a>
           <p className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-gray-600">
-            {p.company_yc_url ? (
-              <a href={p.company_yc_url} target="_blank" rel="noreferrer" className="font-medium hover:underline">
-                {p.company_name}
-              </a>
+            {p.origin === "yc" ? (
+              p.company_yc_url ? (
+                <a href={p.company_yc_url} target="_blank" rel="noreferrer" className="font-medium hover:underline">
+                  {p.company_name}
+                </a>
+              ) : (
+                <span className="font-medium">{p.company_name}</span>
+              )
             ) : (
-              <span className="font-medium">{p.company_name}</span>
+              <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[11px] font-semibold text-sky-700">Popular on GitHub</span>
             )}
             {p.yc_batch && <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">YC {p.yc_batch}</span>}
             {p.hiring && <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">Hiring</span>}
+            {p.stars != null && (
+              <span className="inline-flex items-center gap-1" title={`${p.stars.toLocaleString("en-IN")} stars`}>
+                <Icon name="star" className="h-3.5 w-3.5 text-amber-500" />
+                {compact(p.stars)}
+              </span>
+            )}
+            {p.language && <span>{p.language}</span>}
           </p>
-          {p.one_liner && <p className="mt-1 text-sm text-gray-600">{p.one_liner}</p>}
+          {(p.one_liner || p.repo_description) && <p className="mt-1 text-sm text-gray-600">{p.one_liner || p.repo_description}</p>}
         </div>
         <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
           {p.beginner_issues} beginner issue{p.beginner_issues === 1 ? "" : "s"}
@@ -122,6 +143,8 @@ export default function OpenSourcePage() {
   const [q, setQ] = useState("");
   const [hiring, setHiring] = useState(false);
   const [recent, setRecent] = useState(false);
+  const [origin, setOrigin] = useState<Origin>("all");
+  const [language, setLanguage] = useState("all");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,19 +164,29 @@ export default function OpenSourcePage() {
     const query = q.trim().toLowerCase();
     return (projects ?? []).filter(
       (p) =>
+        (origin === "all" || p.origin === origin) &&
+        (language === "all" || p.language === language) &&
         (!hiring || p.hiring) &&
         (!recent || recentBatch(p.yc_batch)) &&
-        (!query || `${p.repo} ${p.company_name} ${p.one_liner ?? ""} ${p.issue_title}`.toLowerCase().includes(query))
+        (!query || `${p.repo} ${p.company_name} ${p.one_liner ?? ""} ${p.repo_description ?? ""} ${p.issue_title}`.toLowerCase().includes(query))
     );
-  }, [projects, q, hiring, recent]);
+  }, [projects, q, hiring, recent, origin, language]);
 
-  const narrowed = !!q || hiring || recent;
+  // Languages present, most common first (only popular projects report one).
+  const languages = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const p of projects ?? []) if (p.language) count.set(p.language, (count.get(p.language) ?? 0) + 1);
+    return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([l]) => l);
+  }, [projects]);
+  const counts = { yc: (projects ?? []).filter((p) => p.origin === "yc").length, popular: (projects ?? []).filter((p) => p.origin === "popular").length };
+
+  const narrowed = !!q || hiring || recent || origin !== "all" || language !== "all";
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Open source"
-        subtitle="Open-source projects by YC companies with a beginner-friendly issue to start on. Contributing is a great way to get noticed."
+        subtitle="Open-source projects by YC companies and popular GitHub projects, each with a beginner-friendly issue to start on. Contributing is a great way to get noticed."
         actions={
           <button onClick={load} disabled={loading} className={btnSecondary}>
             <Icon name={loading ? "spinner" : "refresh"} className="h-4 w-4" />
@@ -174,8 +207,28 @@ export default function OpenSourcePage() {
             className="w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-10 pr-3.5 text-sm placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-3 focus:ring-brand-100"
           />
         </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill label="All" on={origin === "all"} onClick={() => setOrigin("all")} />
+          <Pill label={`YC companies (${counts.yc})`} on={origin === "yc"} onClick={() => setOrigin("yc")} title="Repos of YC companies tagged Open Source" />
+          <Pill
+            label={`Popular projects (${counts.popular})`}
+            on={origin === "popular"}
+            onClick={() => setOrigin("popular")}
+            title="Active GitHub projects with 1,000+ stars that keep good first issues open"
+          />
+          {languages.length > 0 && (
+            <Select label="Language" value={language} onChange={setLanguage}>
+              <option value="all">Any language</option>
+              {languages.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </Select>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
-          <Pill label="Company is hiring" on={hiring} onClick={() => setHiring(!hiring)} title="The company has open jobs on YC" />
+          <Pill label="Company is hiring" on={hiring} onClick={() => setHiring(!hiring)} title="The YC company has open jobs" />
           <Pill label="YC 2025–2026" on={recent} onClick={() => setRecent(!recent)} title="Companies from the 2025 and 2026 YC batches" />
         </div>
         <p className="text-xs text-gray-500">
@@ -230,6 +283,8 @@ export default function OpenSourcePage() {
                         setQ("");
                         setHiring(false);
                         setRecent(false);
+                        setOrigin("all");
+                        setLanguage("all");
                       }}
                       className={btnSecondary}
                     >

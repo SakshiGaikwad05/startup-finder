@@ -188,6 +188,11 @@ CREATE TABLE IF NOT EXISTS oss_projects (
   issue_updated_at  TIMESTAMPTZ,
   fetched_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 'yc' = a YC open-source company's repo; 'popular' = an active, well-starred GitHub project.
+ALTER TABLE oss_projects ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'yc';
+ALTER TABLE oss_projects ADD COLUMN IF NOT EXISTS stars INT;
+ALTER TABLE oss_projects ADD COLUMN IF NOT EXISTS language TEXT;
+ALTER TABLE oss_projects ADD COLUMN IF NOT EXISTS repo_description TEXT;
 
 -- One row per "Find Startups Today" run, so the dashboard can say what is new today.
 CREATE TABLE IF NOT EXISTS discovery_runs (
