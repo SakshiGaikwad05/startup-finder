@@ -2,6 +2,8 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { NavBar } from "@/components/NavBar";
+import { Footer } from "@/components/Footer";
+import { CookieBanner } from "@/components/CookieBanner";
 import { themeBootScript } from "@/components/ThemeToggle";
 
 // Self-hosted (SIL Open Font License) so builds never depend on reaching Google Fonts.
@@ -9,8 +11,44 @@ const body = localFont({ src: "./fonts/figtree-latin.woff2", variable: "--font-b
 const heading = localFont({ src: "./fonts/bricolage-grotesque-latin.woff2", variable: "--font-heading", weight: "600 700", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Daily Startup Finder",
-  description: "Find startups hiring for your skills, matched to your resume, with the reason for every match.",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://startup-finder.sakshii.tech"),
+  title: {
+    default: "Daily Startup Finder — Startups Hiring For Your Skills",
+    template: "%s | Daily Startup Finder",
+  },
+  description:
+    "Find YC and recently funded startups actively hiring for your tech stack. Upload your resume or choose your skills to see tailored matches with detailed match reasons.",
+  keywords: [
+    "startup jobs",
+    "software engineer jobs",
+    "YC startups",
+    "funded startups",
+    "tech hiring",
+    "remote jobs",
+    "India startup jobs",
+    "Pune jobs",
+    "developer matching",
+  ],
+  authors: [{ name: "Daily Startup Finder" }],
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://startup-finder.sakshii.tech",
+    siteName: "Daily Startup Finder",
+    title: "Daily Startup Finder — Startups Hiring For Your Skills",
+    description:
+      "Find YC and recently funded startups actively hiring for your tech stack. Upload your resume or choose your skills to see tailored matches.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Daily Startup Finder — Startups Hiring For Your Skills",
+    description:
+      "Find YC and recently funded startups actively hiring for your tech stack. Upload your resume or choose your skills to see tailored matches.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export const viewport: Viewport = {

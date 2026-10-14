@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/lib/users";
 import { loadStartups } from "@/lib/discovery/read";

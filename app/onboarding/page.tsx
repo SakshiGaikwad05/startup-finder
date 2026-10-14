@@ -28,7 +28,21 @@ function Pill({ label, on, onClick }: { label: string; on: boolean; onClick: () 
   );
 }
 
-function ChipInput({ id, values, onChange, suggestions, placeholder }: { id?: string; values: string[]; onChange: (v: string[]) => void; suggestions: string[]; placeholder: string }) {
+function ChipInput({
+  id,
+  values,
+  onChange,
+  suggestions,
+  placeholder,
+  maxLength,
+}: {
+  id?: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+  suggestions: string[];
+  placeholder: string;
+  maxLength?: number;
+}) {
   const [text, setText] = useState("");
   // Best first: exact match, then "starts with", then "contains" — so typing "SQL" + Enter adds SQL, not MySQL.
   const matches = useMemo(() => {
@@ -41,7 +55,10 @@ function ChipInput({ id, values, onChange, suggestions, placeholder }: { id?: st
       .slice(0, 6);
   }, [text, suggestions, values]);
   const add = (v: string) => {
-    const t = v.trim();
+    let t = v.trim();
+    if (maxLength && t.length > maxLength) {
+      t = t.slice(0, maxLength).trim();
+    }
     if (t && !values.some((x) => x.toLowerCase() === t.toLowerCase())) onChange([...values, t]);
     setText("");
   };
@@ -68,6 +85,7 @@ function ChipInput({ id, values, onChange, suggestions, placeholder }: { id?: st
         <input
           id={id}
           value={text}
+          maxLength={maxLength}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === ",") {
@@ -90,7 +108,14 @@ function ChipInput({ id, values, onChange, suggestions, placeholder }: { id?: st
           </div>
         )}
       </div>
-      <p className="mt-1.5 text-xs text-gray-500">Press Enter to add.</p>
+      <div className="mt-1 flex items-center justify-between text-xs text-gray-400">
+        <span>Press Enter to add.</span>
+        {maxLength ? (
+          <span className={text.length >= maxLength ? "font-medium text-amber-600" : ""}>
+            {text.length}/{maxLength} characters
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -150,7 +175,7 @@ function Onboarding() {
       setUpload({ state: "error", msg: d.error ?? "Couldn't read that file. Try again, or add your skills below." });
       return;
     }
-    setSkills((s) => [...new Set([...s, ...d.skills])]);
+    setSkills((s) => [...new Set([...s, ...d.skills.filter((sk: string) => sk.length <= 20)])]);
     setRoles((r) => [...new Set([...r, ...d.roles])]);
     if (d.locations?.length) setLocations((l) => [...new Set([...l, ...d.locations.filter((x: string) => (LOCATION_OPTIONS as readonly string[]).includes(x))])]);
     if (d.experienceYears != null) setYears(String(d.experienceYears));
@@ -267,11 +292,12 @@ function Onboarding() {
               <span className="h-px flex-1 bg-gray-200" /> or add them yourself <span className="h-px flex-1 bg-gray-200" />
             </div>
             <div>
-              <label htmlFor="skills-input" className="block text-base font-semibold text-gray-900">
-                Your skills
-              </label>
-              <p className="mb-3 mt-0.5 text-sm text-gray-600">Languages, frameworks and tools you&apos;ve used, even in college projects.</p>
-              <ChipInput id="skills-input" values={skills} onChange={setSkills} suggestions={ALL_SKILLS} placeholder="e.g. Python, React, SQL" />
+              <div className="flex items-baseline justify-between">
+                <h2 className="font-semibold text-gray-900">Your skills</h2>
+                <span className="text-xs text-gray-400">Max 20 characters per skill</span>
+              </div>
+              <p className="mb-2 text-sm text-gray-500">Languages, frameworks, tools. Matching only counts what's listed here.</p>
+              <ChipInput id="skills-input" values={skills} onChange={setSkills} suggestions={ALL_SKILLS} placeholder="e.g. Python, React, SQL…" maxLength={20} />
             </div>
           </div>
         )}

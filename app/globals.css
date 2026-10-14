@@ -173,8 +173,16 @@ html.dark body {
 html.dark .bg-white {
   background-color: #1a1917;
 }
-html.dark .bg-white\/90 {
-  background-color: rgb(26 25 23 / 0.9);
+html.dark .bg-white\/80 {
+  background-color: rgb(30 35 45 / 0.8);
+}
+html.dark .bg-white\/50 {
+  background-color: rgb(18 21 28 / 0.5);
+}
+
+/* Solid "dark" buttons (bg-gray-900 + white text) would turn light with the inverted grays. */
+html.dark .bg-gray-900 {
+  background-color: #4f46e5;
 }
 
 /* Accent text that's too dark on a dark background → light shade of the same hue. */
