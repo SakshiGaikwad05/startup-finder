@@ -129,3 +129,5 @@ submit a change, and the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 The license covers this code only. Data the app collects (YC directory, job boards, funding news, company sites)
 belongs to those sources and stays under their own terms.
+
+The favicon uses the "space-awesome" icon from [Font Awesome Free](https://fontawesome.com) (CC BY 4.0).
