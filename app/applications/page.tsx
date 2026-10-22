@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, jsonBody } from "@/components/api";
 import { StatusPill } from "@/components/JobCard";
 import { Avatar, Icon } from "@/components/Icon";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { Banner, btnPrimary, CardSkeleton, EmptyState, PageHeader } from "@/components/ui";
 
 interface Row {
@@ -73,6 +74,8 @@ export default function ApplicationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [stage, setStage] = useState("all");
+  const [removeTarget, setRemoveTarget] = useState<Row | null>(null);
+  const [removing, setRemoving] = useState(false);
   const load = async () => {
     const { ok, status, data, error } = await api("/api/applications");
     if (status === 401) return router.replace("/onboarding");
@@ -90,11 +93,16 @@ export default function ApplicationsPage() {
     else load();
     return ok;
   }
-  async function remove(r: Row) {
-    if (!confirm(`Remove ${r.job_title ?? r.startup_name} from your list?`)) return;
-    const { ok, error } = await api(`/api/applications/${r.id}`, { method: "DELETE" });
+  async function remove() {
+    if (!removeTarget) return;
+    setRemoving(true);
+    const { ok, error } = await api(`/api/applications/${removeTarget.id}`, { method: "DELETE" });
+    setRemoving(false);
     if (!ok) setError(error);
-    else load();
+    else {
+      setRemoveTarget(null);
+      load();
+    }
   }
 
   const inStage = (key: string, r: Row) => key === "all" || STAGES.find((s) => s.key === key)!.statuses.includes(r.status);
@@ -218,7 +226,7 @@ export default function ApplicationsPage() {
 
                     <div className="mt-2 flex justify-end">
                       <button
-                        onClick={() => remove(r)}
+                        onClick={() => setRemoveTarget(r)}
                         className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 hover:bg-rose-50 hover:text-rose-700"
                       >
                         <Icon name="trash" className="h-3.5 w-3.5" />
@@ -232,6 +240,17 @@ export default function ApplicationsPage() {
           )}
         </>
       )}
+
+      <ConfirmModal
+        open={!!removeTarget}
+        title="Remove application?"
+        description={`Remove ${removeTarget?.job_title ?? removeTarget?.startup_name ?? "this application"} from your list? This won't affect the original job posting.`}
+        confirmLabel="Remove"
+        onConfirm={remove}
+        onCancel={() => setRemoveTarget(null)}
+        loading={removing}
+        destructive
+      />
     </div>
   );
 }

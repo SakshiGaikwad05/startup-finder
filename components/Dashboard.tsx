@@ -7,6 +7,7 @@ import { StartupCard } from "./StartupCard";
 import { GettingStarted } from "./GettingStarted";
 import { Summary, type SummaryPick } from "./Summary";
 import { Icon, type IconName } from "./Icon";
+import { Dropdown } from "./Dropdown";
 import { api } from "./api";
 import { Banner, btnPrimary, btnSecondary, CardSkeleton, EmptyState } from "./ui";
 
@@ -417,20 +418,13 @@ export function Dashboard() {
               </div>
               <label className="flex items-center gap-2 text-[13px] text-gray-600">
                 Sort by
-                <span className="relative">
-                  <select
-                    value={f.sort}
-                    onChange={(e) => setFilters({ ...f, sort: e.target.value as FilterState["sort"] })}
-                    className="appearance-none rounded-lg border border-gray-300 bg-white py-1.5 pl-3 pr-8 text-[13px] font-medium text-gray-900 focus:border-brand-500 focus:outline-none"
-                  >
-                    {SORTS.map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                  <Icon name="chevron-down" className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500" />
-                </span>
+                <Dropdown
+                  label="Sort startups"
+                  value={f.sort}
+                  onChange={(v) => setFilters({ ...f, sort: v as FilterState["sort"] })}
+                  options={SORTS.map(([value, label]) => ({ value, label }))}
+                  variant="sort"
+                />
               </label>
             </div>
 

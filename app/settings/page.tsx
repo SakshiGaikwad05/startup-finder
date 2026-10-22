@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { api } from "@/components/api";
 import { Banner, btnPrimary, CardSkeleton, PageHeader } from "@/components/ui";
 
@@ -42,6 +43,8 @@ export default function SettingsPage() {
   // The link exists only after the user asks for it (the server keeps just a hash, so it can't be shown again).
   const [link, setLink] = useState<string | null>(null);
   const [making, setMaking] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const linkRef = useRef<HTMLInputElement>(null);
 
   async function copy(text: string) {
@@ -100,11 +103,9 @@ export default function SettingsPage() {
   const years = Number(p.tech_experience_years ?? 0);
 
   async function startOver() {
-    const msg = me?.user.linkCreatedAt
-      ? "Sign out of this profile on this device? You can come back using your private link."
-      : "You haven't made a private link yet, so after signing out you can't get back to this profile. Sign out anyway?";
-    if (!confirm(msg)) return;
+    setSigningOut(true);
     const { ok, error } = await api("/api/me", { method: "DELETE" });
+    setSigningOut(false);
     if (!ok) return setError(error);
     try {
       localStorage.removeItem("dsf.filters.v1");
@@ -217,13 +218,24 @@ export default function SettingsPage() {
             </span>
           </p>
           <div className="mt-5 border-t border-gray-100 pt-4">
-            <button onClick={startOver} className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50">
+            <button onClick={() => setShowSignOutConfirm(true)} className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50">
               <Icon name="logout" className="h-4 w-4" />
               Sign out on this device
             </button>
           </div>
         </section>
       </div>
+
+      <ConfirmModal
+        open={showSignOutConfirm}
+        title="Sign out on this device?"
+        description={hadLink ? "Sign out of this profile on this device? You can come back using your private link." : "You haven't made a private link yet, so after signing out you can't get back to this profile. Sign out anyway?"}
+        confirmLabel="Sign out"
+        onConfirm={startOver}
+        onCancel={() => setShowSignOutConfirm(false)}
+        loading={signingOut}
+        destructive
+      />
     </div>
   );
 }

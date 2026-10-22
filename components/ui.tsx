@@ -1,4 +1,6 @@
 import { Icon, type IconName } from "./Icon";
+import { Dropdown, type DropdownOption } from "./Dropdown";
+import { Children, isValidElement } from "react";
 
 /** Shared button looks. Primary = the one main action on a screen. */
 export const btnPrimary =
@@ -90,19 +92,12 @@ export function CardSkeleton({ count = 3 }: { count?: number }) {
 
 /** Compact dropdown used in filter rows (Jobs, YC Jobs). */
 export function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: React.ReactNode }) {
-  return (
-    <label className="relative">
-      <span className="sr-only">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-xl border border-gray-300 bg-white py-2 pl-3 pr-8 text-[13px] font-medium text-gray-900 focus:border-brand-500 focus:outline-none sm:w-auto"
-      >
-        {children}
-      </select>
-      <Icon name="chevron-down" className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500" />
-    </label>
-  );
+  const options = Children.toArray(children).flatMap((child): DropdownOption[] => {
+    if (!isValidElement(child) || child.type !== "option") return [];
+    const option = child.props as { value?: string; children?: React.ReactNode; disabled?: boolean };
+    return [{ value: option.value ?? "", label: String(option.children ?? ""), disabled: option.disabled }];
+  });
+  return <Dropdown label={label} value={value} onChange={onChange} options={options} />;
 }
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: React.ReactNode; actions?: React.ReactNode }) {

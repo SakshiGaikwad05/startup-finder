@@ -1,6 +1,7 @@
 import type { StartupView } from "@/lib/types";
 import { fundedWithin } from "@/lib/filters";
 import { settings } from "@/config/settings";
+import { TextMorph } from "torph/react";
 import { Icon } from "./Icon";
 
 /** Which subset a summary tile stands for; clicking a tile filters the list to it. */
@@ -9,6 +10,13 @@ export type SummaryPick = "all" | "great" | "good" | "jobs" | "ai" | "funded" | 
 export const isAiStartup = (s: StartupView) => s.is_ai === true || s.industry === "AI Startup";
 // Same rule as the "Recently funded" filter, so clicking the tile shows exactly this many.
 export const isRecentlyFunded = (s: StartupView) => fundedWithin(s, settings.addFundedWithinDays);
+
+const countMorph = {
+  duration: 400,
+  ease: "cubic-bezier(0.19, 1, 0.22, 1)",
+  numbers: true,
+  respectReducedMotion: true,
+} as const;
 
 function Tile({ label, value, hint, tone, onClick }: { label: string; value: number; hint: string; tone?: string; onClick?: () => void }) {
   const clickable = !!onClick && value > 0;
@@ -20,7 +28,9 @@ function Tile({ label, value, hint, tone, onClick }: { label: string; value: num
       title={clickable ? `${hint}. Click to show them` : hint}
       className="group min-w-[112px] shrink-0 snap-start rounded-xl bg-gray-50 p-3 text-left transition-colors enabled:hover:bg-brand-50 disabled:cursor-default sm:min-w-0"
     >
-      <div className={`font-display text-2xl font-bold leading-tight tabular-nums ${tone ?? "text-gray-900"}`}>{value}</div>
+      <div className={`font-display text-2xl font-bold leading-tight tabular-nums ${tone ?? "text-gray-900"}`}>
+        <TextMorph {...countMorph}>{String(value)}</TextMorph>
+      </div>
       <div className="flex items-center gap-1 text-xs text-gray-500">
         {label}
         {clickable && <Icon name="arrow-right" className="h-3 w-3 text-gray-400 transition-colors group-hover:text-brand-700" />}
@@ -36,7 +46,9 @@ export function Summary({ list, label, onPick }: { list: StartupView[]; label: s
   return (
     <section aria-label={label} className="rounded-2xl border border-gray-200 bg-white p-4">
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-gray-900">{label}</h2>
+        <h2 className="text-sm font-semibold text-gray-900">
+          <TextMorph {...countMorph}>{label}</TextMorph>
+        </h2>
         <span className="hidden text-xs text-gray-500 sm:inline">Click a number to see those startups</span>
       </div>
       {/* Phones: one swipeable row. Larger screens: grid. */}
