@@ -114,8 +114,50 @@
 .sheet-up {
   animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+/* Confirmation dialog: a short fade and scale keeps it calm while making the state change clear. */
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes modal-panel-in {
+  from { opacity: 0; transform: translateY(0.5rem) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes modal-panel-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(0.5rem) scale(0.98); }
+}
+.modal-backdrop-in { animation: modal-backdrop-in 180ms ease-out; }
+.modal-backdrop-out { animation: modal-backdrop-out 180ms ease-in forwards; }
+.modal-panel-in { animation: modal-panel-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.modal-panel-out { animation: modal-panel-out 180ms ease-in forwards; }
+
+/* Dropdown menus stay in their trigger's layer and animate without moving nearby controls. */
+@keyframes dropdown-menu-in {
+  from { opacity: 0; transform: translateY(-0.25rem) scaleY(0.96); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+@keyframes dropdown-menu-out {
+  from { opacity: 1; transform: translateY(0) scaleY(1); }
+  to { opacity: 0; transform: translateY(-0.25rem) scaleY(0.96); }
+}
+.dropdown-menu { transform-origin: top; }
+.dropdown-menu-up { transform-origin: bottom; }
+.dropdown-menu-in { animation: dropdown-menu-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.dropdown-menu-out { animation: dropdown-menu-out 200ms ease-in forwards; }
 @media (prefers-reduced-motion: reduce) {
-  .sheet-up {
+  .sheet-up,
+  .modal-backdrop-in,
+  .modal-backdrop-out,
+  .modal-panel-in,
+  .modal-panel-out,
+  .dropdown-menu-in,
+  .dropdown-menu-out {
     animation: none;
   }
 }
