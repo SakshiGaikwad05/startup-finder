@@ -68,6 +68,12 @@ export function isRecentYcBatch(round: string | null | undefined, now = new Date
   return (now.getTime() - new Date(date).getTime()) / 86_400_000 <= settings.addFundedWithinDays;
 }
 
+/** A Product Hunt launch within the recency window, with enough upvotes to be more than a side project. */
+export function launchedRecentlyEnough(launch: { date: string; votes: number } | null | undefined, now = new Date()): boolean {
+  if (!launch || launch.votes < settings.phMinVotes) return false;
+  return (now.getTime() - new Date(launch.date).getTime()) / 86_400_000 <= settings.addFundedWithinDays;
+}
+
 /** YC batch ("Winter 2021", "Fall 2025") → year. YC invests at the batch, so the year is a verified funding fact. */
 export function ycBatchYear(batch: string | null | undefined): number | null {
   const m = batch?.match(/(\d{4})/);

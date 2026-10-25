@@ -121,6 +121,14 @@ export function StartupCard({ s, onChanged }: { s: StartupView; onChanged: () =>
               </span>
             </Fact>
           )}
+          {s.ph_launched_at && s.ph_url && (
+            <Fact icon="rocket" title="Launch date and upvotes from Product Hunt">
+              <a href={s.ph_url} target="_blank" rel="noreferrer" className="hover:underline">
+                Launched on Product Hunt {daysAgo(s.ph_launched_at)}
+                {s.ph_votes ? ` · ${s.ph_votes.toLocaleString("en-IN")} upvotes` : ""}
+              </a>
+            </Fact>
+          )}
         </div>
 
         {(s.funding_round || s.last_funding_amount) && (

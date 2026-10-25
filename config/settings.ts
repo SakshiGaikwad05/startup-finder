@@ -22,6 +22,10 @@ export const settings = {
   requestTimeoutMs: 25000,
   /** Max YC company pages fetched per discovery run (each is ~100KB) */
   ycMaxCompanyPages: 60,
+  /** Product Hunt: top-voted launches read per run, minimum upvotes to count, website lookups per run */
+  phMaxPosts: 100,
+  phMinVotes: 100,
+  phMaxResolves: 40,
   /** Himalayas: pages of 20 newest remote jobs open to India read per run */
   himalayasPages: 10,
   /** Max company websites checked for a careers page per run */

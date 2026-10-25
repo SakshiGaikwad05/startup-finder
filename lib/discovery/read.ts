@@ -8,7 +8,7 @@ import { settings } from "@/config/settings";
 import { isOpenSource } from "@/lib/filters";
 import { candidateSkillSet } from "@/lib/matching/skills";
 import { companyLocationTags, locationTags } from "@/lib/jobs/location";
-import { ageBucket, fundingStatus, isRecentYcBatch, ycBatchFundingDate } from "@/lib/funding";
+import { ageBucket, fundingStatus, isRecentYcBatch, launchedRecentlyEnough, ycBatchFundingDate } from "@/lib/funding";
 import { roleCategories } from "@/lib/jobs/roles";
 import { roleType, workArrangement } from "@/lib/jobs/arrangement";
 import { startupCategories } from "@/lib/classification";
@@ -192,6 +192,8 @@ export async function loadStartups(user: AppUser, opts: { id?: number; slim?: bo
   const keep = (s: any) => {
     if (opts.id || pinned.has(s.id) || appsBy.has(s.id)) return true;
     if (isRecentYcBatch(s.funding_round)) return true; // every YC batch of this year (Winter → Fall)
+    const ph = s.ph_launched_at && { date: dateOnly(s.ph_launched_at)!, votes: s.ph_votes ?? 0, url: s.ph_url ?? "" };
+    if (ph && launchedRecentlyEnough(ph)) return true; // recent Product Hunt launch
     const date = dateOnly(s.last_funding_date) ?? ycBatchFundingDate(s.funding_round);
     // A future date is an upcoming YC Demo Day: the company is in a batch now, so already funded.
     return !!date && (Date.now() - new Date(date).getTime()) / 86_400_000 <= settings.addFundedWithinDays;
@@ -215,6 +217,9 @@ export async function loadStartups(user: AppUser, opts: { id?: number; slim?: bo
       linkedin_url: s.linkedin_url,
       github_url: s.github_url ?? null,
       open_source: isOpenSource(s.github_url, s.raw_tags),
+      ph_launched_at: dateOnly(s.ph_launched_at),
+      ph_votes: s.ph_votes ?? null,
+      ph_url: s.ph_url ?? null,
       careers_url: s.careers_url,
       // Cards show two lines of description; the details page gets the full text.
       description: slim && s.description && s.description.length > 300 ? s.description.slice(0, 297) + "…" : s.description,

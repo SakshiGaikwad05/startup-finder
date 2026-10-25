@@ -13,6 +13,8 @@ import { parseResumeText } from "@/lib/resume/parse";
 import { rateLimit } from "@/lib/rate-limit";
 import { hashToken } from "@/lib/users";
 import { himalayasJob } from "@/sources/jobs/himalayas";
+import { cleanWebsite, phStartup } from "@/sources/producthunt";
+import { launchedRecentlyEnough } from "@/lib/funding";
 import { beginnerIssueQuery, pickSuggestedIssue, popularRepoQuery, repoOf, type GhIssue } from "@/sources/oss";
 import { isJobTooOld, jobAgeDays } from "@/lib/jobs/age";
 import { fundedRecentlyEnough } from "@/lib/discovery/store";
@@ -301,6 +303,24 @@ t("doesn't invent Go/TypeScript from short words", () => {
   assert.ok(!r.skills.includes("Go") && !r.skills.includes("TypeScript"));
 });
 t("AI role inferred from LLM skills", () => assert.ok(parseResumeText("Built agents with LangGraph and Groq LLM.").roles.includes("AI Engineer")));
+
+console.log("product hunt");
+t("Product Hunt launches: website cleaned, launch counts as a recent signal only with enough upvotes", () => {
+  assert.equal(cleanWebsite("https://acme.ai/?ref=producthunt&utm_source=ph"), "https://acme.ai");
+  assert.equal(cleanWebsite("https://acme.ai/app/?utm_medium=x&plan=pro"), "https://acme.ai/app?plan=pro");
+  assert.equal(cleanWebsite("https://www.producthunt.com/products/acme"), null);
+  assert.equal(cleanWebsite("not a url"), null);
+  const now = new Date("2026-10-26");
+  const post = { id: "1", name: " Acme AI ", tagline: "Agents for invoices", description: null, url: "https://www.producthunt.com/posts/acme-ai",
+    website: "https://www.producthunt.com/r/p/1", votesCount: 420, createdAt: "2026-10-10T07:01:00Z", topics: { edges: [{ node: { name: "Fintech" } }] } };
+  const r = phStartup(post, "https://acme.ai");
+  assert.equal(r.name, "Acme AI");
+  assert.deepEqual(r.launch, { date: "2026-10-10", votes: 420, url: post.url });
+  assert.deepEqual(r.tags, ["Fintech"]);
+  assert.equal(fundedRecentlyEnough(r, now), true); // no funding, but a strong recent launch
+  assert.equal(fundedRecentlyEnough(phStartup({ ...post, votesCount: 12 }, null), now), false); // too few upvotes
+  assert.equal(launchedRecentlyEnough({ date: "2026-05-01", votes: 900 }, now), false); // older than 3 months
+});
 
 console.log("himalayas");
 t("Himalayas jobs: India or worldwide only, recent only, entry-level counts as fresher", () => {

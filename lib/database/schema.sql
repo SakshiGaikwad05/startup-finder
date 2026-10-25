@@ -67,6 +67,10 @@ ALTER TABLE startups ADD COLUMN IF NOT EXISTS other_locations TEXT[] NOT NULL DE
 ALTER TABLE startups ADD COLUMN IF NOT EXISTS founders JSONB NOT NULL DEFAULT '[]';
 -- Company GitHub account as listed on its YC page.
 ALTER TABLE startups ADD COLUMN IF NOT EXISTS github_url TEXT;
+-- Latest Product Hunt launch (from the official API).
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS ph_launched_at DATE;
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS ph_votes INT;
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS ph_url TEXT;
 -- Funding details. last_funding_* above stay the primary round; every report is kept for verification.
 ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_stage TEXT;           -- pre_seed | seed | series_a | series_b_plus | accelerator | debt | other
 ALTER TABLE startups ADD COLUMN IF NOT EXISTS funding_kind TEXT;            -- confirmed | planned | rumored

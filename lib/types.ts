@@ -81,6 +81,8 @@ export interface StartupResult {
   linkedinUrl?: string | null;
   /** Company GitHub account, only from a source that lists it (YC company page). */
   githubUrl?: string | null;
+  /** A Product Hunt launch: counts as a recent signal like funding (see fundedRecentlyEnough). */
+  launch?: { date: string; votes: number; url: string } | null;
   careersUrl?: string | null;
   description?: string | null;
   location?: string | null;
@@ -186,6 +188,10 @@ export interface StartupView {
   github_url: string | null;
   /** Open source per a source: YC lists a GitHub account or tags the company "Open Source". */
   open_source: boolean;
+  /** Latest Product Hunt launch (date, upvotes, post URL), when found there. */
+  ph_launched_at: string | null;
+  ph_votes: number | null;
+  ph_url: string | null;
   careers_url: string | null;
   description: string | null;
   location: string | null;

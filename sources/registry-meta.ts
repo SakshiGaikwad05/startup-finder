@@ -9,6 +9,14 @@ export const SOURCE_DEFS = [
       "Hiring-company list from the open yc-oss dataset (github.com/yc-oss/api), then each public YC company page for founded year, LinkedIn and job postings.",
   },
   {
+    id: "producthunt",
+    name: "Product Hunt launches",
+    kind: "launches",
+    baseUrl: "https://api.producthunt.com/v2/api/graphql",
+    notes:
+      "Official API (needs PRODUCT_HUNT_TOKEN, a free developer token). Most-upvoted launches of the last 90 days; 100+ upvotes counts as a recent signal. Website from the allowed /r/p/ redirect.",
+  },
+  {
     id: "himalayas",
     name: "Himalayas remote jobs",
     kind: "job_board",

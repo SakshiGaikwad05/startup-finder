@@ -50,6 +50,7 @@ Tables are created automatically on first request.
 | Source | What it gives | Notes |
 |---|---|---|
 | `yc` | Hiring YC companies (recent batches: India, US and fully remote); HQ country, other offices, founders + LinkedIn, founded year, jobs | yc-oss open dataset + public YC company pages (robots.txt allows them). Up to 60 new pages/run, cached 20h |
+| `producthunt` | Startups that launched on Product Hunt in the last 3 months with 100+ upvotes | Official API, needs `PRODUCT_HUNT_TOKEN` |
 | `himalayas` | Remote jobs open to India (India-only or worldwide) | Public API, no key, cached 1h |
 | `funding_rss` | Funding announcements (date, amount, round, investors, article URL, confirmed/planned/rumored) | Free RSS: Inc42, ET Tech Funding, ET Startups, Entrackr, YourStory, TechCrunch Fundraising + Startups, Crunchbase News |
 | `company_careers` | Careers page, jobs from public Greenhouse / Lever / Ashby boards or schema.org JobPosting, public emails | For known startups with a website |

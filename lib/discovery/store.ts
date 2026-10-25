@@ -10,6 +10,7 @@ import {
   fundingStatus,
   isNewStartup,
   isRecentYcBatch,
+  launchedRecentlyEnough,
   parseAmount,
   toUsd,
   ycBatchFundingDate,
@@ -53,7 +54,7 @@ async function findExisting(r: StartupResult, domain: string | null, linkedin: s
 }
 
 /** Which source is more authoritative for company facts (higher wins). */
-const PRIORITY: Record<string, number> = { yc: 4, company_careers: 3, search: 2, remotive: 2, himalayas: 2, funding_rss: 1 };
+const PRIORITY: Record<string, number> = { yc: 4, company_careers: 3, search: 2, remotive: 2, himalayas: 2, producthunt: 2, funding_rss: 1 };
 const priority = (s: string | undefined) => (s ? PRIORITY[s] ?? 0 : 0);
 
 function same(a: unknown, b: unknown) {
@@ -65,9 +66,15 @@ function resultFundingDate(r: StartupResult): string | null {
   return r.funding?.date ?? ycBatchFundingDate(r.funding?.round) ?? null;
 }
 
-/** New startups are added only if funded recently (or in a YC batch from this year); known startups keep getting updates. */
+const dateOnlyStr = (d: string | Date) => (typeof d === "string" ? d.slice(0, 10) : d.toISOString().slice(0, 10));
+
+/**
+ * New startups are added only with a recent signal: funded recently, in a YC batch from this year,
+ * or launched on Product Hunt recently with enough upvotes. Known startups keep getting updates.
+ */
 export function fundedRecentlyEnough(r: StartupResult, now = new Date()): boolean {
   if (isRecentYcBatch(r.funding?.round, now)) return true;
+  if (launchedRecentlyEnough(r.launch, now)) return true;
   const date = resultFundingDate(r);
   if (!date) return false;
   return (now.getTime() - new Date(date).getTime()) / 86_400_000 <= settings.addFundedWithinDays;
@@ -210,6 +217,10 @@ export async function upsertStartup(r: StartupResult, profile: CandidateProfile)
     sources_seen: sourcesSeen,
     field_sources: JSON.stringify(fieldSources),
     raw_tags: tags,
+    // Product Hunt launch: only sources that report one set it; the newest launch wins.
+    ...(r.launch && (!existing?.ph_launched_at || r.launch.date >= dateOnlyStr(existing.ph_launched_at))
+      ? { ph_launched_at: r.launch.date, ph_votes: r.launch.votes, ph_url: r.launch.url }
+      : {}),
   };
 
   let id: number;
