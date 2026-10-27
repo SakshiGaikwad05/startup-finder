@@ -5,6 +5,7 @@ import type { ApplicationView, JobView } from "@/lib/types";
 import { APPLICATION_STATUSES } from "@/lib/types";
 import { MatchBadge } from "./MatchScore";
 import { Avatar, Icon, type IconName } from "./Icon";
+import { Dropdown } from "./Dropdown";
 import { api, jsonBody } from "./api";
 
 /** Friendlier names for the stored statuses. */
@@ -36,20 +37,14 @@ function postStatus(startupId: number, jobId: number | null, status: string) {
 export function StatusPill({ status, onChange, disabled }: { status: string; onChange: (s: string) => void; disabled?: boolean }) {
   return (
     <span className={`relative inline-flex items-center rounded-full ${STATUS_TONE[status] ?? STATUS_TONE["Not Applied"]}`}>
-      <select
-        aria-label="Application status"
+      <Dropdown
+        label="Application status"
         value={status}
+        onChange={onChange}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-        className="appearance-none rounded-full bg-transparent py-1 pl-3 pr-7 text-xs font-semibold focus:outline-none"
-      >
-        {APPLICATION_STATUSES.map((s) => (
-          <option key={s} value={s}>
-            {STATUS_LABEL[s]}
-          </option>
-        ))}
-      </select>
-      <Icon name="chevron-down" className="pointer-events-none absolute right-2 h-3.5 w-3.5" />
+        variant="compact"
+        options={APPLICATION_STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+      />
     </span>
   );
 }
