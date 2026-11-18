@@ -16,6 +16,7 @@
   "dependencies": {
     "@neon/config": "^1.8.6",
     "@neon/env": "^1.5.3",
+    "@vercel/analytics": "^2.0.1",
     "next": "^15.5.0",
     "pg": "^8.13.0",
     "react": "^19.1.0",
