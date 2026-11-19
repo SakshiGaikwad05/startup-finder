@@ -1,5 +1,4 @@
 import "./globals.css";
-import { Analytics } from "@vercel/analytics/next";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { NavBar } from "@/components/NavBar";
@@ -42,7 +41,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </main>
         {/* The footer carries the extra bottom padding that keeps content clear of the phone tab bar. */}
         <Footer />
-        <Analytics />
       </body>
     </html>
   );
